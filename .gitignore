@@ -1,0 +1,45 @@
+# Secrets and API keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+secrets*.json
+client_secret*.json
+service-account*.json
+.netrc
+.spotify_cache
+.cache-*
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases (forward_collector.py writes SQLite)
+*.sqlite
+*.sqlite3
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+
+# Raw caches of third-party pages and API responses (may embed their tokens; not ours to redistribute)
+data/raw/
