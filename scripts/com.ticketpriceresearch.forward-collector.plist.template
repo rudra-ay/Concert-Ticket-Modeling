@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd template for forward_collector.py (see FORWARD_COLLECTOR.md, "Install the schedule").
+  __ROOT__ is replaced with the project root at install time. Runs once a day at 09:15 local time;
+  if the Mac is asleep then, launchd runs it at the next wake. The API key is read from __ROOT__/.env
+  by the script itself; never put it in this file.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ticketpriceresearch.forward-collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__ROOT__/.venv/bin/python</string>
+        <string>__ROOT__/forward_collector.py</string>
+        <string>daily</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__ROOT__</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__ROOT__/data/forward/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__ROOT__/data/forward/logs/launchd.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>

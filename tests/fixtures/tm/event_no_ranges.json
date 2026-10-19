@@ -1,0 +1,16 @@
+{
+  "name": "Quiet Duo",
+  "type": "event",
+  "id": "vvG1aZ9KqTest02",
+  "sales": {"public": {"startDateTime": "2026-09-10T15:00:00Z", "endDateTime": "2026-11-02T02:00:00Z"}},
+  "dates": {
+    "start": {"localDate": "2026-11-01", "localTime": "19:30:00", "dateTime": "2026-11-02T02:30:00Z", "dateTBD": false, "dateTBA": false, "timeTBA": false, "noSpecificTime": false},
+    "timezone": "America/Los_Angeles",
+    "status": {"code": "onsale"}
+  },
+  "classifications": [{"primary": true, "segment": {"name": "Music"}, "genre": {"name": "Folk"}, "subGenre": {"name": "Folk"}}],
+  "_embedded": {
+    "venues": [{"name": "Small Hall", "id": "KovZpTestVenue2", "timezone": "America/Los_Angeles", "city": {"name": "Portland"}, "state": {"stateCode": "OR"}, "country": {"countryCode": "US"}, "location": {"longitude": "-122.68", "latitude": "45.52"}}],
+    "attractions": [{"name": "Quiet Duo", "id": "K8vZTestAttr02"}]
+  }
+}

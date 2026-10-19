@@ -1,0 +1,9 @@
+{
+  "name": "Called Off Live",
+  "type": "event",
+  "id": "vvG1aZ9KqTest03",
+  "dates": {"start": {"localDate": "2026-11-20", "localTime": "20:00:00", "dateTime": "2026-11-21T02:00:00Z"}, "timezone": "America/Chicago", "status": {"code": "cancelled"}},
+  "classifications": [{"primary": true, "segment": {"name": "Music"}, "genre": {"name": "Hip-Hop/Rap"}}],
+  "priceRanges": [{"type": "standard", "currency": "USD", "min": 35.0, "max": 95.0}],
+  "_embedded": {"venues": [{"name": "Lakeside Theater", "id": "KovZpTestVenue3", "timezone": "America/Chicago", "city": {"name": "Chicago"}, "state": {"stateCode": "IL"}, "country": {"countryCode": "US"}}]}
+}

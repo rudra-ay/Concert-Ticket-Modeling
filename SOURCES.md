@@ -97,6 +97,11 @@ Several official API hosts serve a robots.txt that disallows everything, or disa
   - Rate: 1 request at a time, at least 5 s apart, UA `TicketPriceResearch/0.1 (personal research; contact: rudraayyagari@gmail.com)`. Stop on any 429 or 403.
   - Cache: `data/raw/wikipedia/<title-slug>__<revid>.json`.
   - License to carry forward: **CC BY-SA 4.0. Attribute Wikipedia and the page revision. Derived tables shared publicly must be CC BY-SA.**
+- **Route actually used (collector-prices, 2026-10-18; strict robots reading per DECISIONS.md):** enwiki dump `20261001` from dumps.wikimedia.org, not the Action API.
+  - `dumps.wikimedia.org/robots.txt` returns 404 (no rules), cached at `data/raw/wikipedia_dumps/meta/robots.txt`. Usage note on the front page (cached at `meta/index.html`): the WMF User-Agent Policy is enforced for dumps, and "Downloads are also rate limited and capped at 3 connections per-IP". The team stays at 2 connections or fewer (lead instruction) and coordinates through a shared lock file in `src/wikidump_http.py` (at least 5 s between request starts, across processes).
+  - Files: `enwiki-20261001-pages-articles-multistream-index.txt.bz2` (285 MB, sha1 verified against `dumpstatus.json`), plus serial HTTP Range requests for only the bz2 streams that hold candidate tour pages in `enwiki-20261001-pages-articles-multistream.xml.bz2` (26.9 GB; never downloaded whole, because the observed throughput of about 100 KB/s per connection would take about 3 days). The candidate titles come from title patterns in the index, minus redirects, which are identified from `enwiki-20261001-redirect.sql.gz` (downloaded by collector-features).
+  - No 403s, 429s or challenges so far. Two dropped connections on the index download were resumed with a Range request.
+  - Cache: `data/raw/wikipedia_dumps/streams/20261001/<start>-<end>.bz2` (raw stream bytes), `pages/20261001/<page_id>__<revid>.json` (extracted tour pages), and `fetch_log.jsonl`. Code: `src/collect_wikipedia_boxoffice.py` and `src/boxoffice_parse.py`.
 
 ### A2. Wikidata (venues and artists)
 - **URL:** https://www.wikidata.org/wiki/Special:EntityData/ ; https://query.wikidata.org/sparql

@@ -1,0 +1,149 @@
+"""Build features_bill.parquet (one row per show_id).
+
+Bill size and openers come from the spine's opening_acts_raw / opening_acts_wikilinks
+(enwiki tour tables, CC BY-SA 4.0). Opener popularity = Wikimedia pageviews (CC0)
+of linked opener articles, windows ending the day before the show. Farewell/reunion
+flags come from tour-title keywords and from the tour article's enwiki categories
+(e.g. "Farewell concert tours"), keeping the matched keyword/category for audit.
+"""
+from __future__ import annotations
+
+import re
+
+import numpy as np
+import pandas as pd
+
+import features_wikidata as W
+from features_artist import _is_music_entity, split_links
+from features_common import OUT
+from features_pageviews import fetch_daily, hype_features
+from features_spine import load_spine
+from features_tours import tour_memberships
+from features_wikilinks import Resolver
+
+FAREWELL = re.compile(r"farewell|final tour|final world tour|the final|last tour|goodbye|end of the road|"
+                      r"retirement|one last|last time around|so long", re.I)
+REUNION = re.compile(r"reunion|reunited|back together|reunite", re.I)
+FESTIVAL = re.compile(r"festival|\bfest\b|fest$", re.I)
+NO_OPENER = {"—", "–", "-", "", "none", "n/a"}
+JUNK = re.compile(r"rowspan|colspan|style=|^tba$|^tbc$|^tbd$", re.I)
+
+
+def _raw_acts(raw) -> list[str] | None:
+    """Split opening_acts_raw. None = unknown (null or markup junk); [] = explicit dash/none."""
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)) or raw is pd.NA:
+        return None
+    s = str(raw).strip()
+    if JUNK.search(s):
+        return None
+    if s.lower() in NO_OPENER:
+        return []
+    # Not split on "and"/"&": band names contain them (spine already joins acts with " | ").
+    parts = re.split(r"\s*(?:\||<br\s*/?>|,|;)\s*", s)
+    return [p for p in parts if p and p.lower() not in NO_OPENER]
+
+
+def build() -> pd.DataFrame:
+    spine = load_spine()
+    raw = pd.read_parquet(__import__("features_spine").spine_path())
+    extra = raw[["show_id"] + [c for c in ("opening_acts_wikilinks", "tour_page_id", "table_caption")
+                               if c in raw.columns]]
+    spine = spine.merge(extra, on="show_id", how="left")
+    res = Resolver()
+
+    venue_type = {}
+    vpath = OUT / "features_venue.parquet"
+    if vpath.exists():
+        v = pd.read_parquet(vpath)
+        venue_type = dict(zip(v["venue_id"], v["venue_type"]))
+
+    # Tour article categories mentioning farewell/reunion.
+    mem = tour_memberships()
+    mem = mem[mem["category"].str.contains("arewell|eunion", regex=True)]
+    tour_cats = mem.groupby("page_id")["category"].apply(lambda s: "; ".join(sorted(s))).to_dict()
+
+    series: dict[str, pd.Series | None] = {}
+    rows = []
+    for s in spine.itertuples(index=False):
+        headliners = split_links(s.artist_wikilink) or [s.artist_name]
+        links = split_links(getattr(s, "opening_acts_wikilinks", None))
+        raw_acts = _raw_acts(s.opening_acts_raw)
+        if raw_acts is None and not links:
+            n_open, open_src = pd.NA, None
+        else:
+            # Raw text sometimes loses separators, so never count fewer acts than links.
+            n_open = max(len(links), len(raw_acts or []))
+            open_src = "links_and_raw" if links else "raw_text"
+        n_head = len(headliners)
+
+        # Opener popularity: linked openers, plus unlinked names whose exact enwiki
+        # title resolves to a music-related Wikidata item (has MBID/genre/instrument).
+        pvs, n_name_matched = [], 0
+        linked_titles = {res.resolve(l)[0] for l in links}
+        cands = [(l, "link") for l in links]
+        cands += [(a, "name") for a in (raw_acts or []) if res.resolve(a)[0] not in linked_titles]
+        for l, how in cands:
+            title, q = res.resolve(l)
+            if not title:
+                continue
+            if how == "name":
+                if not (q and _is_music_entity(W.entity(q))):
+                    continue
+                n_name_matched += 1
+            if title not in series:
+                series[title] = fetch_daily(title)
+            pvs.append(hype_features(series[title], s.show_date, prefix="o")["o_mean_90d"]
+                       if s.show_date else np.nan)
+        pvs_ok = [x for x in pvs if pd.notna(x)]
+
+        tour = str(s.tour_title or "")
+        fw = FAREWELL.search(tour)
+        ru = REUNION.search(tour)
+        cats = tour_cats.get(getattr(s, "tour_page_id", None), "")
+        fw_cat = "; ".join(c for c in cats.split("; ") if "arewell" in c) if cats else ""
+        ru_cat = "; ".join(c for c in cats.split("; ") if "eunion" in c) if cats else ""
+
+        vt = venue_type.get(s.venue_id)
+        fest_reason = None
+        if FESTIVAL.search(tour) or FESTIVAL.search(str(getattr(s, "table_caption", "") or "")):
+            fest_reason = "title_keyword"
+        elif FESTIVAL.search(str(s.venue_name or "")):
+            fest_reason = "venue_name_keyword"
+        elif vt == "festival ground":
+            fest_reason = "venue_type"
+        elif pd.notna(n_open) and n_head + n_open >= 5:
+            fest_reason = "bill_size>=5"
+
+        rows.append({
+            "show_id": s.show_id,
+            "n_headliners": n_head,
+            "co_headliner_flag": n_head > 1,
+            "n_openers": n_open,
+            "openers_source": open_src,
+            "n_acts_on_bill": (n_head + n_open) if pd.notna(n_open) else pd.NA,
+            "multi_artist_flag": True if n_head > 1 else (pd.NA if pd.isna(n_open) else n_open > 0),
+            "opener_names": " | ".join(links) if links else (" | ".join(raw_acts) if raw_acts else None),
+            "n_openers_linked": len(links),
+            "n_openers_name_matched": n_name_matched,
+            "n_openers_with_pv": len(pvs_ok),
+            "opener_pv_mean_90d_max": max(pvs_ok) if pvs_ok else np.nan,
+            "opener_pv_mean_90d_sum": sum(pvs_ok) if pvs_ok else np.nan,
+            "festival_flag": fest_reason is not None,
+            "festival_reason": fest_reason,
+            "farewell_flag": bool(fw or fw_cat),
+            "farewell_match": (fw.group(0) if fw else None) or (fw_cat or None),
+            "reunion_flag": bool(ru or ru_cat),
+            "reunion_match": (ru.group(0) if ru else None) or (ru_cat or None),
+        })
+    out = pd.DataFrame(rows)
+    for c in ("n_openers", "n_acts_on_bill"):
+        out[c] = out[c].astype("Int32")
+    out["multi_artist_flag"] = out["multi_artist_flag"].astype("boolean")
+    out.to_parquet(OUT / "features_bill.parquet", index=False)
+    return out
+
+
+if __name__ == "__main__":
+    df = build()
+    print(df.notna().mean().round(3).to_string())
+    print(df[["farewell_flag", "reunion_flag", "festival_flag", "multi_artist_flag"]].mean().to_string())

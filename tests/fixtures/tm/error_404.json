@@ -1,0 +1,1 @@
+{"errors": [{"code": "DIS1004", "detail": "Resource not found with provided criteria (locale=en-us, id=doesnotexist)", "status": "404", "_links": {"about": {"href": "/discovery/v2/errors.html#DIS1004"}}}]}
