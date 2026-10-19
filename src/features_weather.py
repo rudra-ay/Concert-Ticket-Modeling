@@ -5,46 +5,93 @@ Open-Meteo's archive API is the one robots.txt exception approved in DECISIONS.m
 Free tier, non-commercial use only; data CC BY 4.0, "Weather data by Open-Meteo.com".
 
 Coordinates, in order of preference:
-  1. data/interim/features_venue.parquet (collector-features, Wikidata venue coordinates);
+  1. features_venue.parquet (collector-features, Wikidata venue coordinates);
   2. Census Gazetteer internal point of the venue's matched US place (venue_metro.parquet, features_metro.py).
 Non-US venues without venue coordinates get no weather.
 
-One request per (venue, cluster of show dates spanning <= 14 days); hours are venue-local (timezone=auto).
-Responses are cached in data/raw/open_meteo/ and never refetched. A 403/429 stops the whole run.
+Requests: one HTTP request per show date for up to BATCH_LOCATIONS venues (Open-Meteo accepts coordinate
+lists), >= 5 s apart, hours venue-local (timezone=auto). Each venue-day is cached as its own file in
+data/raw/open_meteo/ and never refetched. Quota pacing keeps us inside the free tier (600/min, 5,000/h,
+10,000/day): see QuotaLedger. A 403/429/challenge, or 3 consecutive network failures, stops the run;
+partial results are still written and the next run resumes from cache.
 """
 from __future__ import annotations
 
+import collections
 import datetime as dt
 import json
+import time
 import zipfile
 
 import numpy as np
 import pandas as pd
 import requests
 
-from context_http import venue_features_path, INTERIM, RAW, BlockedError, fetch_cached, load_spine, out_dir
+from features_metro import PLACE_COORD_OVERRIDES
+from context_http import RAW, BlockedError, load_spine, load_venue_coords, out_dir, polite_get, write_atomic
 
 API = "https://archive-api.open-meteo.com/v1/archive"
 CACHE = RAW / "open_meteo"
-CLUSTER_DAYS = 14   # Open-Meteo counts >2 weeks of data as more than one call
-ARCHIVE_LAG_DAYS = 6  # the archive (ERA5 + forecast blend) lags real time by about 5 days
+ARCHIVE_LAG_DAYS = 6  # the archive lags real time by about 5 days
 EVENING_HOURS = range(18, 24)  # 18:00-23:00 local, inclusive
-DAILY = ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "rain_sum", "snowfall_sum",
-         "precipitation_hours", "wind_speed_10m_max", "weather_code"]
-HOURLY = ["temperature_2m", "apparent_temperature", "precipitation", "wind_speed_10m", "weather_code"]
+# Exactly 10 variables and <= 14 days per location, so each location counts as 1.0 API call.
+DAILY = ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_hours",
+         "wind_speed_10m_max", "weather_code"]
+HOURLY = ["temperature_2m", "precipitation", "wind_speed_10m", "weather_code"]
+BATCH_LOCATIONS = 20  # 40-venue x 14-day requests timed out ~5% of the time
+WINDOW_DAYS = 14  # requests cover fixed 14-day windows: all venues with a show in the window, one call each
+WINDOW_EPOCH = dt.date(1970, 1, 5)
+MAX_CONSECUTIVE_FAILURES = 3
+# Free-tier limits are 600/min, 5,000/h, 10,000/day; stay at 80%.
+QUOTA_PER_MIN, QUOTA_PER_HOUR, QUOTA_PER_DAY = 480, 4000, 8000
+SNOW_CODES = {71, 73, 75, 77, 85, 86}
+
+
+class QuotaExhausted(RuntimeError):
+    pass
+
+
+class QuotaLedger:
+    """Counts location-calls per rolling minute/hour (in memory) and per UTC day (persisted)."""
+
+    def __init__(self, path=CACHE / "_quota.json"):
+        self.path = path
+        self.recent: collections.deque[tuple[float, int]] = collections.deque()
+        self.days = json.loads(path.read_text()) if path.exists() else {}
+
+    @staticmethod
+    def _today() -> str:
+        return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+    def _window(self, seconds: float) -> int:
+        now = time.monotonic()
+        return sum(n for t, n in self.recent if now - t < seconds)
+
+    def acquire(self, n: int) -> None:
+        if self.days.get(self._today(), 0) + n > QUOTA_PER_DAY:
+            raise QuotaExhausted(f"daily budget {QUOTA_PER_DAY} reached; rerun after 00:00 UTC to continue")
+        while self._window(60) + n > QUOTA_PER_MIN or self._window(3600) + n > QUOTA_PER_HOUR:
+            wait = 60 if self._window(3600) + n <= QUOTA_PER_HOUR else 300
+            print(f"  quota pacing: sleeping {wait}s", flush=True)
+            time.sleep(wait)
+        self.recent.append((time.monotonic(), n))
+        while self.recent and time.monotonic() - self.recent[0][0] > 3600:
+            self.recent.popleft()
+        self.days[self._today()] = self.days.get(self._today(), 0) + n
+        write_atomic(self.path, json.dumps(self.days).encode())
 
 
 def venue_coordinates(spine: pd.DataFrame) -> pd.DataFrame:
     venues = spine[["venue_id"]].drop_duplicates()
     parts = []
-    fv = venue_features_path()
-    if fv.exists():
-        v = pd.read_parquet(fv)
-        lat = next((c for c in ["lat", "latitude", "venue_lat"] if c in v), None)
-        lon = next((c for c in ["lon", "lng", "longitude", "venue_lon"] if c in v), None)
-        if lat and lon and "venue_id" in v:
-            parts.append(v[["venue_id", lat, lon]].rename(columns={lat: "lat", lon: "lon"})
-                         .dropna().drop_duplicates("venue_id").assign(coord_source="venue_wikidata"))
+    v = load_venue_coords(spine)
+    if v is not None:
+        vm_conf = out_dir() / "venue_metro.parquet"
+        if vm_conf.exists():  # backstop: venue coords > 40 km from the tour table's same-state city
+            vmc = pd.read_parquet(vm_conf)
+            if "coord_conflict_km" in vmc:
+                v = v[~v.venue_id.isin(vmc.loc[vmc.coord_conflict_km.notna(), "venue_id"])]
+        parts.append(v[["venue_id", "lat", "lon"]].dropna().assign(coord_source="venue_wikidata"))
     vm_path = out_dir() / "venue_metro.parquet"
     gaz_path = RAW / "census_acs" / "gazetteer" / "2024_Gaz_place_national.zip"
     if vm_path.exists() and gaz_path.exists():
@@ -53,6 +100,8 @@ def venue_coordinates(spine: pd.DataFrame) -> pd.DataFrame:
             gaz = pd.read_csv(z.open(z.namelist()[0]), sep="\t", dtype={"GEOID": str})
         gaz.columns = [c.strip() for c in gaz.columns]
         g = vm.merge(gaz[["GEOID", "INTPTLAT", "INTPTLONG"]], left_on="place_geoid", right_on="GEOID")
+        for geoid, (la, lo) in PLACE_COORD_OVERRIDES.items():
+            g.loc[g.GEOID == geoid, ["INTPTLAT", "INTPTLONG"]] = [la, lo]
         parts.append(g.rename(columns={"INTPTLAT": "lat", "INTPTLONG": "lon"})[["venue_id", "lat", "lon"]]
                      .assign(coord_source="census_place_centroid"))
     if not parts:
@@ -61,29 +110,66 @@ def venue_coordinates(spine: pd.DataFrame) -> pd.DataFrame:
     return venues.merge(coords, on="venue_id", how="left")
 
 
-def date_clusters(dates: list[dt.date]) -> list[tuple[dt.date, dt.date]]:
-    out: list[tuple[dt.date, dt.date]] = []
-    for d in sorted(set(dates)):
-        if out and (d - out[-1][0]).days < CLUSTER_DAYS:
-            out[-1] = (out[-1][0], d)
-        else:
-            out.append((d, d))
-    return out
+def _coord_key(lat: float, lon: float) -> str:
+    return f"{lat:.3f}_{lon:.3f}"
 
 
-def fetch(venue_id: str, lat: float, lon: float, start: dt.date, end: dt.date) -> dict | None:
-    path = CACHE / f"{venue_id}__{lat:.3f}_{lon:.3f}__{start}__{end}.json"
-    params = {"latitude": round(lat, 4), "longitude": round(lon, 4), "start_date": str(start),
-              "end_date": str(end), "daily": ",".join(DAILY), "hourly": ",".join(HOURLY),
+def cache_index() -> dict[tuple[str, str], list[tuple[dt.date, dt.date, str]]]:
+    """(venue_id, coord_key) -> [(start, end, path)] for every cached response (single- or multi-day)."""
+    idx: dict = collections.defaultdict(list)
+    for p in CACHE.glob("*.json"):
+        if p.name.startswith("_"):
+            continue
+        try:
+            venue_id, coords, start, end = p.stem.rsplit("__", 3)
+            idx[(venue_id, coords)].append((dt.date.fromisoformat(start), dt.date.fromisoformat(end), str(p)))
+        except ValueError:
+            continue
+    return idx
+
+
+def cached_path(idx, venue_id: str, lat: float, lon: float, day: dt.date) -> str | None:
+    for start, end, path in idx.get((venue_id, _coord_key(lat, lon)), []):
+        if start <= day <= end:
+            return path
+    return None
+
+
+def window_of(day: dt.date, last_available: dt.date) -> tuple[dt.date, dt.date]:
+    k = (day - WINDOW_EPOCH).days // WINDOW_DAYS
+    start = WINDOW_EPOCH + dt.timedelta(days=k * WINDOW_DAYS)
+    return start, min(start + dt.timedelta(days=WINDOW_DAYS - 1), last_available)
+
+
+def fetch_batch(start: dt.date, end: dt.date, locs: pd.DataFrame, ledger: QuotaLedger, state: dict) -> None:
+    """Fetch one window for up to BATCH_LOCATIONS venues; write one cache file per venue."""
+    day = f"{start}..{end}"
+    ledger.acquire(len(locs))
+    params = {"latitude": ",".join(f"{x:.4f}" for x in locs.lat), "longitude": ",".join(f"{x:.4f}" for x in locs.lon),
+              "start_date": str(start), "end_date": str(end), "daily": ",".join(DAILY), "hourly": ",".join(HOURLY),
               "timezone": "auto", "wind_speed_unit": "kmh"}
     try:
-        fetch_cached(API, path, params=params)
-    except BlockedError:
-        raise
+        body = json.loads(polite_get(API, params=params))
     except requests.HTTPError as e:
-        print(f"  skip {venue_id} {start}..{end}: {e}")
-        return None
-    return json.loads(path.read_text())
+        print(f"  skip {day} ({len(locs)} venues): {e}", flush=True)
+        return
+    except (requests.Timeout, requests.ConnectionError) as e:
+        # Not pushback, so no retry in this run; nothing is cached, so a later run tries once more.
+        state["failures"] += 1
+        print(f"  network failure {state['failures']}/{MAX_CONSECUTIVE_FAILURES} on {day}: {type(e).__name__}",
+              flush=True)
+        if state["failures"] >= MAX_CONSECUTIVE_FAILURES:
+            raise BlockedError(f"{state['failures']} consecutive network failures from Open-Meteo; stopping") from e
+        return
+    state["failures"] = 0
+    results = body if isinstance(body, list) else [body]
+    if len(results) != len(locs):
+        print(f"  skip {day}: got {len(results)} results for {len(locs)} locations", flush=True)
+        return
+    for loc, res in zip(locs.itertuples(index=False), results):
+        write_atomic(CACHE / f"{loc.venue_id}__{_coord_key(loc.lat, loc.lon)}__{start}__{end}.json",
+                     json.dumps(res).encode())
+    state["fetched"] += len(locs)
 
 
 def summarise(resp: dict, day: dt.date) -> dict:
@@ -96,9 +182,9 @@ def summarise(resp: dict, day: dt.date) -> dict:
     r = row.iloc[0]
     rec.update(
         wx_temp_max_c=r.temperature_2m_max, wx_temp_min_c=r.temperature_2m_min,
-        wx_precip_mm=r.precipitation_sum, wx_rain_mm=r.rain_sum, wx_snowfall_cm=r.snowfall_sum,
-        wx_precip_hours=r.precipitation_hours, wx_wind_max_kmh=r.wind_speed_10m_max,
-        wx_weather_code=r.weather_code,
+        wx_precip_mm=r.precipitation_sum, wx_precip_hours=r.precipitation_hours,
+        wx_wind_max_kmh=r.wind_speed_10m_max, wx_weather_code=r.weather_code,
+        wx_snow_day=(int(r.weather_code) in SNOW_CODES) if pd.notna(r.weather_code) else None,
     )
     hourly = pd.DataFrame(resp["hourly"])
     hourly["time"] = pd.to_datetime(hourly.time)
@@ -106,7 +192,6 @@ def summarise(resp: dict, day: dt.date) -> dict:
     if len(ev):
         rec.update(
             wx_eve_temp_mean_c=ev.temperature_2m.mean(),
-            wx_eve_apparent_temp_min_c=ev.apparent_temperature.min(),
             wx_eve_precip_mm=ev.precipitation.sum(min_count=1),
             wx_eve_precip_hours=int((ev.precipitation >= 0.1).sum()),
             wx_eve_wind_max_kmh=ev.wind_speed_10m.max(),
@@ -117,63 +202,111 @@ def summarise(resp: dict, day: dt.date) -> dict:
     return rec
 
 
-def build(spine: pd.DataFrame, today: dt.date | None = None) -> pd.DataFrame:
-    today = today or dt.date.today()
-    last_available = today - dt.timedelta(days=ARCHIVE_LAG_DAYS)
-    shows = spine[["show_id", "venue_id", "date"]].merge(venue_coordinates(spine), on="venue_id", how="left")
-    shows["day"] = shows.date.dt.date
-    todo = shows.dropna(subset=["lat", "lon", "day"])
-    todo = todo[todo.day <= last_available]
-
-    responses: dict[tuple[str, dt.date], dict] = {}
-    groups = list(todo.groupby("venue_id"))
-    n_req = sum(len(date_clusters(list(g.day))) for _, g in groups)
-    print(f"{len(todo)} shows at {len(groups)} venues -> {n_req} requests (cached ones are free)")
-    for venue_id, g in groups:
-        lat, lon = float(g.lat.iloc[0]), float(g.lon.iloc[0])
-        for start, end in date_clusters(list(g.day)):
-            resp = fetch(venue_id, lat, lon, start, end)
-            if resp is None:
-                continue
-            for d in g.day[(g.day >= start) & (g.day <= end)]:
-                responses[(venue_id, d)] = resp
-
+def _table(shows: pd.DataFrame, last_available: dt.date, unfetched: str) -> pd.DataFrame:
+    idx = cache_index()
     rows = []
     for s in shows.itertuples(index=False):
-        rec = {"show_id": s.show_id, "wx_coord_source": s.coord_source, "wx_query_lat": s.lat, "wx_query_lon": s.lon}
+        rec = {"show_id": s.show_id, "wx_priced_show": s.priced, "wx_coord_source": s.coord_source,
+               "wx_query_lat": s.lat, "wx_query_lon": s.lon}
         if pd.isna(s.day):
             rec["wx_status"] = "no_date"
         elif pd.isna(s.lat):
             rec["wx_status"] = "no_coordinates"
         elif s.day > last_available:
             rec["wx_status"] = "not_yet_in_archive"
-        elif (s.venue_id, s.day) not in responses:
-            rec["wx_status"] = "request_failed"
         else:
-            rec.update(summarise(responses[(s.venue_id, s.day)], s.day))
-            rec["wx_status"] = "ok" if "wx_temp_max_c" in rec else "date_missing_in_response"
+            path = cached_path(idx, s.venue_id, s.lat, s.lon, s.day)
+            if path is None:
+                rec["wx_status"] = unfetched
+            else:
+                with open(path) as f:
+                    rec.update(summarise(json.load(f), s.day))
+                rec["wx_status"] = "ok" if "wx_temp_max_c" in rec else "date_missing_in_response"
         rows.append(rec)
     out = pd.DataFrame(rows)
     out["wx_known_at_purchase"] = False  # show-day weather: context variable, not a purchase-time feature
     for c in ["wx_eve_precip_hours", "wx_eve_hours_covered"]:
         if c in out:
             out[c] = out[c].astype("Int16")
-    if "wx_eve_thunderstorm" in out:
-        out["wx_eve_thunderstorm"] = out.wx_eve_thunderstorm.astype("boolean")
+    for c in ["wx_eve_thunderstorm", "wx_snow_day", "wx_priced_show"]:
+        if c in out:
+            out[c] = out[c].astype("boolean")
     return out
 
 
-def main() -> None:
-    spine = load_spine()
-    try:
-        out = build(spine)
-    except BlockedError as e:
-        print(f"STOPPED: {e}")
-        raise SystemExit(2)
+def write_table(out: pd.DataFrame, label: str) -> None:
     path = out_dir() / "features_weather.parquet"
     out.to_parquet(path, index=False)
-    print(f"wrote {path}: {len(out)} rows")
-    print(out.wx_status.value_counts().to_string())
+    priced = out[out.wx_priced_show.fillna(False)]
+    print(f"wrote {path} [{label}]: {len(out)} rows; priced shows ok "
+          f"{(priced.wx_status == 'ok').mean():.1%} of {len(priced)}", flush=True)
+    print(out.wx_status.value_counts().to_string(), flush=True)
+
+
+def build(spine: pd.DataFrame, today: dt.date | None = None) -> tuple[pd.DataFrame, str | None]:
+    """Fetch priced shows' venue-windows first, write a checkpoint table, then the rest."""
+    today = today or dt.date.today()
+    last_available = today - dt.timedelta(days=ARCHIVE_LAG_DAYS)
+    price = spine["avg_price_usd"] if "avg_price_usd" in spine else pd.Series(np.nan, index=spine.index)
+    shows = spine[["show_id", "venue_id", "date"]].assign(priced=price.notna().values)
+    shows = shows.merge(venue_coordinates(spine), on="venue_id", how="left")
+    shows["day"] = shows.date.dt.date
+    need = shows.dropna(subset=["lat", "lon", "day"])
+    need = need[need.day <= last_available]
+    need = need.groupby(["venue_id", "day"], as_index=False).agg(
+        lat=("lat", "first"), lon=("lon", "first"), priced=("priced", "max"))
+
+    idx = cache_index()
+    need["path"] = [cached_path(idx, r.venue_id, r.lat, r.lon, r.day) for r in need.itertuples()]
+    todo = need[need.path.isna()].copy()
+    win = [window_of(d, last_available) for d in todo.day]
+    todo["w_start"], todo["w_end"] = [w[0] for w in win], [w[1] for w in win]
+    todo = todo.groupby(["venue_id", "w_start", "w_end"], as_index=False).agg(
+        lat=("lat", "first"), lon=("lon", "first"), priced=("priced", "max"))
+    n_pri = int(todo.priced.sum())
+    print(f"{len(need)} venue-days with coordinates; {len(todo)} venue-windows to fetch "
+          f"({n_pri} with a priced show first, then {len(todo) - n_pri})", flush=True)
+
+    stop_reason = None
+    ledger, state = QuotaLedger(), {"failures": 0, "fetched": 0}
+    try:
+        for phase, part in (("priced", todo[todo.priced]), ("unpriced", todo[~todo.priced])):
+            for i, ((w_start, w_end), g) in enumerate(part.sort_values("w_start").groupby(["w_start", "w_end"])):
+                for k in range(0, len(g), BATCH_LOCATIONS):
+                    fetch_batch(w_start, w_end, g.iloc[k:k + BATCH_LOCATIONS], ledger, state)
+                if i % 50 == 0:
+                    print(f"  [{phase}] {i} windows done, {state['fetched']} venue-windows fetched this run", flush=True)
+            if phase == "priced":
+                write_table(_table(shows, last_available, "pending"), "checkpoint: priced slice complete")
+                print("PRIORITY SLICE DONE", flush=True)
+    except (QuotaExhausted, BlockedError) as e:
+        stop_reason = f"{type(e).__name__}: {e}"
+        print(f"STOPPED: {stop_reason}", flush=True)
+
+    return _table(shows, last_available, "pending" if stop_reason else "request_failed"), stop_reason
+
+
+def run_once() -> str | None:
+    out, stop_reason = build(load_spine())
+    write_table(out, "PARTIAL: rerun to resume" if stop_reason else "pass complete")
+    return stop_reason
+
+
+def main() -> None:
+    """`--until-done`: after a daily-quota stop, wait for 00:05 UTC and continue (rereads the current spine)."""
+    import sys
+
+    until_done = "--until-done" in sys.argv
+    while True:
+        stop_reason = run_once()
+        if stop_reason and stop_reason.startswith("BlockedError"):
+            raise SystemExit(2)  # pushback: a human should look before the next run
+        if not (until_done and stop_reason and stop_reason.startswith("QuotaExhausted")):
+            return
+        now = dt.datetime.now(dt.timezone.utc)
+        resume = dt.datetime.combine(now.date() + dt.timedelta(days=1), dt.time(0, 5), dt.timezone.utc)
+        print(f"waiting until {resume:%Y-%m-%d %H:%M} UTC for the next daily budget", flush=True)
+        time.sleep((resume - now).total_seconds())
 
 
 if __name__ == "__main__":

@@ -10,13 +10,15 @@ Venue -> place -> county (largest population piece, ACS summary level 155) -> CB
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 import zipfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from context_http import venue_features_path, INTERIM, out_dir, RAW, fetch_cached, load_spine
+from context_http import load_venue_coords, INTERIM, out_dir, RAW, fetch_cached, load_spine
 
 ACS_VINTAGE = 2024
 ACS_BASE = f"https://www2.census.gov/programs-surveys/acs/summary_file/{ACS_VINTAGE}/table-based-SF/data/5YRData/"
@@ -30,6 +32,9 @@ COUSUB_URL = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gaz
 CACHE = RAW / "census_acs"
 COLLEGE_SHARE_THRESHOLD = 0.15  # enrolled college/grad students / total population
 MAX_COORD_MATCH_KM = 15.0       # coordinate match to a place centroid must be at least this close
+NAME_COORD_MAX_KM = 40.0        # a name match is accepted if its centroid is this close to the venue coords
+# Census internal points that sit off the mainland (San Francisco's is in the Farallon Islands).
+PLACE_COORD_OVERRIDES = {"0667000": (37.7793, -122.4193)}  # San Francisco City Hall
 
 STATES = {
     "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA", "colorado": "CO",
@@ -53,7 +58,7 @@ CITY_ALIASES = {
     "st. louis": "st. louis", "saint louis": "st. louis", "st louis": "st. louis", "saint paul": "st. paul",
     "st paul": "st. paul", "hollywood": "los angeles", "indianapolis": "indianapolis",
     "lexington": "lexington-fayette", "augusta": "augusta-richmond county", "athens": "athens-clarke county",
-    "boise": "boise city", "napa valley": "napa", "san buenaventura": "san buenaventura (ventura)", "ventura": "san buenaventura (ventura)",
+    "boise": "boise city", "napa valley": "napa", "belmont park": "elmont", "san buenaventura": "san buenaventura (ventura)", "ventura": "san buenaventura (ventura)",
 }
 # Venue towns whose names are shared by a larger or similar-sized US place elsewhere. Used only when
 # shows_base gives no state and no venue coordinates exist.
@@ -65,8 +70,40 @@ CITY_DEFAULT_STATE = {
     "noblesville": "IN", "tinley park": "IL", "clarkston": "MI", "burgettstown": "PA",
     "cuyahoga falls": "OH", "saratoga springs": "NY", "west palm beach": "FL", "irvine": "CA",
     "auburn": "WA", "rosemont": "IL", "independence": "MO", "highland park": "IL",
-    "the woodlands": "TX", "woodlands": "TX", "uncasville": "CT", "atlantic city": "NJ",
+    "the woodlands": "TX", "belmont park": "NY", "woodlands": "TX", "uncasville": "CT", "atlantic city": "NJ",
 }
+# (state, city as written) -> Census place / county-subdivision base name, for venue towns that aren't
+# Census places, or are spelled differently in tour tables.
+STATE_CITY_ALIASES = {
+    ("CT", "uncasville"): "montville", ("MI", "clarkston"): "independence", ("NY", "darien center"): "darien",
+    ("VA", "bristow"): "gainesville", ("PA", "university park"): "state college", ("UT", "salt lake"): "salt lake city",
+    ("OH", "cuyahoga"): "cuyahoga falls", ("NY", "hopwell"): "hopewell", ("GA", "cumberland"): "smyrna",
+    ("NJ", "holmdel township"): "holmdel", ("FL", "lake buena vista"): "bay lake",
+    ("CA", "angels camp"): "angels", ("MI", "mt. pleasant"): "mount pleasant", ("MI", "mt pleasant"): "mount pleasant",
+    ("MA", "west springfield"): "west springfield town", ("CO", "snowmass"): "snowmass village",
+    ("MO", "ridgedale"): "branson", ("CA", "paso robles"): "el paso de robles (paso robles)",
+    ("GA", "macon"): "macon-bibb county", ("WI", "lacrosse"): "la crosse", ("MA", "allston"): "boston",
+    ("OK", "oklahoma"): "oklahoma city", ("TX", "odessa city"): "odessa", ("NY", "belmont park"): "elmont", ("PA", "upper darby township"): "upper darby",
+}
+_US_SUFFIX = re.compile(r",\s*(united states( of america)?|usa|u\.s\.a?\.?|us)\s*$", re.IGNORECASE)
+_DC = re.compile(r"^washington,?\s*d\.?\s*c\.?$", re.IGNORECASE)
+
+
+def normalize_city(city, state) -> tuple[str, object]:
+    """'New York City, United States' -> ('new york city', state); 'Austin, Texas' -> ('austin', 'TX')."""
+    c = _US_SUFFIX.sub("", str(city or "")).strip()
+    c = re.sub(r"^usa\s+", "", c, flags=re.IGNORECASE)  # "USA Commerce City, CO, United States"
+    if _DC.match(c):
+        return "washington", "DC"
+    if "," in c:
+        head, tail = (x.strip() for x in c.rsplit(",", 1))
+        tail_state = tail.upper() if len(tail) == 2 and tail.isalpha() else STATES.get(tail.lower())
+        if tail_state:
+            c = head
+            state = state if not pd.isna(state) else tail_state
+    return c.lower(), state
+
+
 AMBIGUITY_RATIO = 3.0  # name-only: top place must be >= 3x the population of the runner-up
 
 # Government-form suffixes can stack ("Indianapolis city (balance)"); strip them repeatedly, then
@@ -74,7 +111,7 @@ AMBIGUITY_RATIO = 3.0  # name-only: top place must be >= 3x the population of th
 _GOV_SUFFIXES = [" consolidated government (balance)", " metropolitan government (balance)",
                  " metro government (balance)", " unified government (balance)", " (balance)", " urban county",
                  " zona urbana", " comunidad"]
-_LSAD_SUFFIXES = [" city and borough", " municipality", " borough", " village", " city", " town", " cdp"]
+_LSAD_SUFFIXES = [" charter township", " township", " city and borough", " municipality", " borough", " village", " city", " town", " cdp"]
 
 
 def _download() -> dict[str, Path]:
@@ -141,7 +178,10 @@ def _load_reference(paths: dict[str, Path]) -> dict[str, pd.DataFrame]:
         "CBSA Code": "cbsa_code", "CBSA Title": "cbsa_title",
         "Metropolitan/Micropolitan Statistical Area": "cbsa_type", "CSA Code": "csa_code", "CSA Title": "csa_title"})
 
-    gaz = _read_gazetteer(paths["gazetteer"]).merge(acs[["GEO_ID", "population"]].assign(GEOID=lambda x: x.GEO_ID.str[9:])
+    gaz = _read_gazetteer(paths["gazetteer"])
+    for geoid, (la, lo) in PLACE_COORD_OVERRIDES.items():
+        gaz.loc[gaz.GEOID == geoid, ["INTPTLAT", "INTPTLONG"]] = [la, lo]
+    gaz = gaz.merge(acs[["GEO_ID", "population"]].assign(GEOID=lambda x: x.GEO_ID.str[9:])
                     [acs.GEO_ID.str.startswith("1600000US")][["GEOID", "population"]], on="GEOID", how="left")
 
     pc = acs[acs.GEO_ID.str.startswith("1550000US")][["GEO_ID", "population"]].copy()
@@ -154,20 +194,10 @@ def _load_reference(paths: dict[str, Path]) -> dict[str, pd.DataFrame]:
     return {"acs": acs, "county_cbsa": county_cbsa, "gaz": gaz, "place_county": place_county, "cousub": cousub}
 
 
-def _venue_coords() -> pd.DataFrame | None:
-    """Venue coordinates from collector-features (features_venue), if present."""
-    p = venue_features_path()
-    if not p.exists():
-        return None
-    v = pd.read_parquet(p)
-    lat = next((c for c in ["lat", "latitude", "venue_lat"] if c in v), None)
-    lon = next((c for c in ["lon", "lng", "longitude", "venue_lon"] if c in v), None)
-    if not (lat and lon and "venue_id" in v):
-        return None
-    v = v.rename(columns={lat: "lat", lon: "lon"})
-    # us_state is ISO 3166-2 ("US-NY"); keep the USPS part. Rows without coordinates still carry it.
-    v["venue_us_state"] = v["us_state"].astype("string").str.replace("US-", "", regex=False) if "us_state" in v else pd.NA
-    return v[["venue_id", "lat", "lon", "venue_us_state"]].drop_duplicates("venue_id")
+def _venue_coords(spine: pd.DataFrame) -> pd.DataFrame | None:
+    """Venue coordinates and US state from collector-features, with the shared guards applied."""
+    v = load_venue_coords(spine)
+    return None if v is None else v[["venue_id", "lat", "lon", "venue_us_state"]]
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -176,32 +206,65 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return 6371.0 * 2 * np.arcsin(np.sqrt(a))
 
 
+def _name_variants(*names: str) -> list[str]:
+    """Spelling variants seen in tour tables: accents, Saint/St., trailing 'township', New England 'X Town'."""
+    out: list[str] = []
+    for n in names:
+        if not n:
+            continue
+        a = unicodedata.normalize("NFKD", n).encode("ascii", "ignore").decode()
+        for x in (n, a):
+            out.append(x)
+            if x.startswith("saint "):
+                out.append("st. " + x[6:])
+            if x.startswith("st. "):
+                out.append("saint " + x[4:])
+            if x.endswith(" township"):
+                out.append(x[: -len(" township")])
+            out.append(x + " town")
+    return list(dict.fromkeys(out))
+
+
 def match_places(venues: pd.DataFrame, gaz: pd.DataFrame, cousub: pd.DataFrame | None = None) -> pd.DataFrame:
-    """venues: venue_id, city, state_usps, lat, lon -> place_geoid | county_fips, match_method, match_note."""
+    """venues: venue_id, city, state_usps, lat, lon -> place_geoid | county_fips, match_method, match_note.
+
+    Name first (city + state); venue coordinates, when present, verify the name match (<= NAME_COORD_MAX_KM)
+    and otherwise pick the nearest place internal point (<= MAX_COORD_MATCH_KM).
+    """
     out = []
     for v in venues.itertuples(index=False):
         rec = {"venue_id": v.venue_id, "place_geoid": None, "county_fips": None, "match_method": "unmatched",
-               "match_note": None}
-        state = v.state_usps
-        raw_city = str(v.city or "").lower().strip()
-        city = CITY_ALIASES.get(raw_city, raw_city)
+               "match_note": None, "coord_conflict_km": None}
+        raw_city, state = normalize_city(v.city, v.state_usps)
+        city = STATE_CITY_ALIASES.get((state, raw_city)) or CITY_ALIASES.get(raw_city, raw_city)
+        has_xy = not pd.isna(v.lat) and not pd.isna(v.lon)
         defaulted = False
-        if pd.isna(state) and pd.isna(v.lat) and city in CITY_DEFAULT_STATE:
+        if pd.isna(state) and not has_xy and city in CITY_DEFAULT_STATE:
             state, defaulted = CITY_DEFAULT_STATE[city], True
         cand = gaz if pd.isna(state) else gaz[gaz.USPS == state]
-        if not pd.isna(v.lat) and not pd.isna(v.lon):
-            dist = _haversine_km(v.lat, v.lon, cand.INTPTLAT.values, cand.INTPTLONG.values)
-            i = int(np.argmin(dist))
-            if dist[i] <= MAX_COORD_MATCH_KM:
-                rec.update(place_geoid=cand.GEOID.iloc[i], match_method="coords_nearest_place",
-                           match_note=f"{cand.NAME.iloc[i]}, {cand.USPS.iloc[i]} ({dist[i]:.1f} km)")
+        variants = _name_variants(city, raw_city, city.split(",")[0].strip() if "," in city else "")
+        hits = cand[cand.base.isin(variants)]
+
+        if has_xy and not hits.empty:
+            d = _haversine_km(v.lat, v.lon, hits.INTPTLAT.values, hits.INTPTLONG.values)
+            i = int(np.argmin(d))
+            if d[i] <= NAME_COORD_MAX_KM:
+                rec.update(place_geoid=hits.GEOID.iloc[i], match_method="name_coords_verified",
+                           match_note=f"{hits.NAME.iloc[i]}, {hits.USPS.iloc[i]} ({d[i]:.1f} km)")
                 out.append(rec)
                 continue
-        hits = cand[cand.base == city]
-        if hits.empty and city != raw_city:  # alias didn't fit this state (Hollywood, FL)
-            hits = cand[cand.base == raw_city]
-        if hits.empty and "," in city:  # "Paradise, Nevada" style
-            hits = cand[cand.base == city.split(",")[0].strip()]
+            # The tour table's city exists in this state but far from the venue coordinates. Wikidata
+            # resolution is the likelier error (chains like "Hard Rock Live"), so trust the name.
+            rec["coord_conflict_km"] = round(float(d[i]), 1)
+            has_xy = False
+        if has_xy:
+            d = _haversine_km(v.lat, v.lon, cand.INTPTLAT.values, cand.INTPTLONG.values)
+            i = int(np.argmin(d))
+            if d[i] <= MAX_COORD_MATCH_KM:
+                rec.update(place_geoid=cand.GEOID.iloc[i], match_method="coords_nearest_place",
+                           match_note=f"{cand.NAME.iloc[i]}, {cand.USPS.iloc[i]} ({d[i]:.1f} km)")
+                out.append(rec)
+                continue
         if not hits.empty:
             hits = hits.sort_values("population", ascending=False)
             best = hits.iloc[0]
@@ -218,7 +281,7 @@ def match_places(venues: pd.DataFrame, gaz: pd.DataFrame, cousub: pd.DataFrame |
                 note += f" (chosen from {len(hits)} same-name places)"
             rec.update(place_geoid=best.GEOID, match_method=how, match_note=note)
         elif cousub is not None and not pd.isna(state):
-            cs = cousub[(cousub.USPS == state) & cousub.base.isin({city, raw_city})]
+            cs = cousub[(cousub.USPS == state) & cousub.base.isin(variants)]
             if not cs.empty:
                 best = cs.sort_values("ALAND", ascending=False).iloc[0]
                 rec.update(county_fips=best.GEOID[:5], match_method="name_state_county_subdivision",
@@ -228,9 +291,13 @@ def match_places(venues: pd.DataFrame, gaz: pd.DataFrame, cousub: pd.DataFrame |
 
 
 def build(spine: pd.DataFrame, ref: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def _mode(x: pd.Series):  # most common non-null value: one bad row shouldn't relabel a venue
+        m = x.dropna().mode()
+        return m.iloc[0] if len(m) else pd.NA
+
     venues = spine.groupby("venue_id", as_index=False).agg(
-        city=("city", "first"), state=("state", "first"), country_iso2=("country_iso2", "first"))
-    coords = _venue_coords()
+        city=("city", _mode), state=("state", _mode), country_iso2=("country_iso2", _mode))
+    coords = _venue_coords(spine)
     venues = venues.merge(coords, on="venue_id", how="left") if coords is not None else venues.assign(lat=np.nan, lon=np.nan)
     st = venues.state.astype("string").str.strip()
     venues["state_usps"] = st.where(st.str.len() == 2).str.upper().fillna(st.str.lower().map(STATES))
@@ -239,7 +306,7 @@ def build(spine: pd.DataFrame, ref: dict[str, pd.DataFrame]) -> tuple[pd.DataFra
 
     us = venues[venues.country_iso2.isin(["US", "PR"])]
     m = match_places(us, ref["gaz"], ref["cousub"]) if len(us) else pd.DataFrame(
-        columns=["venue_id", "place_geoid", "county_fips", "match_method", "match_note"])
+        columns=["venue_id", "place_geoid", "county_fips", "match_method", "match_note", "coord_conflict_km"])
     m = m.merge(ref["place_county"].rename(columns={"county_fips": "place_county_fips"}), on="place_geoid", how="left")
     m["county_fips"] = m.county_fips.fillna(m.place_county_fips)
     m = m.drop(columns="place_county_fips").merge(ref["county_cbsa"], on="county_fips", how="left")
@@ -266,16 +333,20 @@ def build(spine: pd.DataFrame, ref: dict[str, pd.DataFrame]) -> tuple[pd.DataFra
     f["metro_log_population"] = np.log(f.metro_population)
     f["is_college_town"] = (f.metro_college_share >= COLLEGE_SHARE_THRESHOLD).astype("boolean").where(
         f.metro_college_share.notna())
+    f["match_confidence"] = np.select(
+        [f.match_method.isin(["coords_nearest_place", "name_coords_verified", "name_state", "name_default_state",
+                              "name_state_county_subdivision"]),
+         f.match_method.eq("name_only_most_populous")], ["high", "low"], default=None)
     f["acs_vintage"] = f"{ACS_VINTAGE} 5-year ({ACS_VINTAGE - 4}-{ACS_VINTAGE})"
     cols = ["venue_id", "is_us", "metro_scope", "cbsa_code", "cbsa_title", "cbsa_type", "csa_code", "csa_title",
             "metro_median_hh_income", "metro_median_hh_income_moe", "metro_population", "metro_log_population",
             "metro_college_share", "is_college_town",
             "county_fips", "county_median_hh_income", "county_population", "county_college_share",
             "place_geoid", "place_median_hh_income", "place_population",
-            "match_method", "match_note", "acs_vintage"]
+            "match_method", "match_confidence", "match_note", "coord_conflict_km", "acs_vintage"]
     features = f[cols]
     venue_metro = f[["venue_id", "city", "state_usps", "country_iso2", "place_geoid", "county_fips", "cbsa_code",
-                     "cbsa_title", "csa_code", "match_method", "match_note"]]
+                     "cbsa_title", "csa_code", "match_method", "match_note", "coord_conflict_km"]]
     return features, venue_metro
 
 

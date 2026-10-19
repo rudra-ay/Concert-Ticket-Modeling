@@ -36,26 +36,35 @@ def _wait_for_domain(domain: str) -> None:
     _last_request[domain] = time.monotonic()
 
 
-def fetch_cached(url: str, cache_path: Path, params: dict | None = None, timeout: int = 120) -> Path:
-    """Return cache_path, downloading url into it first if it isn't cached yet."""
-    if cache_path.exists() and cache_path.stat().st_size > 0:
-        return cache_path
+def polite_get(url: str, params: dict | None = None, timeout: int = 120) -> bytes:
+    """One GET under the collection rules: honest UA, no cookies, >= 5 s per domain, stop on pushback."""
     domain = urlparse(url).netloc
     _wait_for_domain(domain)
     with requests.Session() as s:  # fresh session: no cookie carry-over
         s.headers.update({"User-Agent": USER_AGENT})
-        resp = s.get(url, params=params, timeout=timeout, stream=True, allow_redirects=True)
+        resp = s.get(url, params=params, timeout=timeout, allow_redirects=True)
     if resp.status_code in (403, 429):
         raise BlockedError(f"{resp.status_code} from {domain} for {url}; stopping, not retrying")
     resp.raise_for_status()
     head = resp.content[:2000].lower()
     if b"captcha" in head or b"request rejected" in head or b"access denied" in head:
         raise BlockedError(f"challenge/block page from {domain} for {url}; stopping")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cache_path.with_suffix(cache_path.suffix + ".part")
-    tmp.write_bytes(resp.content)
-    tmp.rename(cache_path)
-    return cache_path
+    return resp.content
+
+
+def write_atomic(path: Path, data: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    tmp.write_bytes(data)
+    tmp.rename(path)
+    return path
+
+
+def fetch_cached(url: str, cache_path: Path, params: dict | None = None, timeout: int = 120) -> Path:
+    """Return cache_path, downloading url into it first if it isn't cached yet."""
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        return cache_path
+    return write_atomic(cache_path, polite_get(url, params=params, timeout=timeout))
 
 
 # ---------------------------------------------------------------------------
@@ -158,3 +167,46 @@ def load_spine(path: str | os.PathLike | None = None) -> pd.DataFrame:
     if df["tour_announced_date"].notna().any():
         df["tour_announced_date"] = pd.to_datetime(df["tour_announced_date"], errors="coerce").dt.tz_localize(None)
     return df
+
+
+MAX_KM_TO_LOCALITY = 50.0  # venue P625 this far from its own locality's P625 = self-contradictory item
+
+
+def load_venue_coords(spine: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    """collector-features' venue coordinates with every guard applied; None if the table is absent.
+
+    Returns venue_id, lat, lon, venue_us_state, coord_dropped_reason. lat/lon (and us_state) are nulled when:
+    - link_ambiguous: one QID linked from several spine cities (chain articles like "Hard Rock Live");
+    - km_to_locality > 50: the item's coordinates contradict its own locality;
+    - venue_link_source == name_match and the Wikidata locality doesn't match the tour table's city.
+    """
+    p = venue_features_path()
+    if not p.exists():
+        return None
+    v = pd.read_parquet(p)
+    lat = _first(v, ["lat", "latitude", "venue_lat"])
+    lon = _first(v, ["lon", "lng", "longitude", "venue_lon"])
+    if not (lat and lon and "venue_id" in v):
+        return None
+    v = v.rename(columns={lat: "lat", lon: "lon"}).drop_duplicates("venue_id").reset_index(drop=True)
+    v["venue_us_state"] = (v["us_state"].astype("string").str.replace("US-", "", regex=False)
+                           if "us_state" in v else pd.NA)
+    reason = pd.Series(pd.NA, index=v.index, dtype="string")
+    if "link_ambiguous" in v:
+        reason = reason.mask(v.link_ambiguous.fillna(False).astype(bool) & reason.isna(), "link_ambiguous")
+    if "km_to_locality" in v:
+        reason = reason.mask((pd.to_numeric(v.km_to_locality, errors="coerce") > MAX_KM_TO_LOCALITY)
+                             & reason.isna(), "far_from_own_locality")
+    loc_col = _first(v, ["wd_locality", "wd_city"])
+    if spine is not None and loc_col and "venue_link_source" in v:
+        city = spine.groupby("venue_id").city.agg(lambda x: x.dropna().mode().iloc[0] if x.notna().any() else None)
+        sc = v.venue_id.map(city)
+        mismatch = [isinstance(a, str) and isinstance(b, str) and bool(slugify(a)) and bool(slugify(b))
+                    and not (slugify(a) in slugify(b) or slugify(b) in slugify(a)) for a, b in zip(sc, v[loc_col])]
+        reason = reason.mask((v.venue_link_source == "name_match") & pd.Series(mismatch, index=v.index)
+                             & reason.isna(), "name_match_city_mismatch")
+    drop = reason.notna()
+    v.loc[drop, ["lat", "lon"]] = float("nan")
+    v.loc[reason.eq("link_ambiguous").fillna(False), "venue_us_state"] = pd.NA
+    v["coord_dropped_reason"] = reason
+    return v[["venue_id", "lat", "lon", "venue_us_state", "coord_dropped_reason"]]
