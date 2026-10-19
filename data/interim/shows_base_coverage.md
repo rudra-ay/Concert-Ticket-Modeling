@@ -1,14 +1,14 @@
 # shows_base coverage
 
-Generated from 1920 cached tour pages (1092 yielded show rows).
+Generated from 2095 cached tour pages (1166 yielded show rows).
 
-- show rows: 65968
-- rows with avg price (USD gross and tickets sold): 22668
-- artists (priced): 311; tours (priced): 759
-- venues (priced): 4284; countries (priced): 85
-- rows with gross in a non-USD currency: 32
-- rows flagged implausible avg price: 13
-- rows that are part of a multi-show aggregate figure: 29853
+- show rows: 71285
+- rows with avg price (USD gross and tickets sold): 24078
+- artists (priced): 322; tours (priced): 787
+- venues (priced): 4400; countries (priced): 85
+- rows with gross in a non-USD currency: 33
+- rows flagged implausible avg price: 14
+- rows that are part of a multi-show aggregate figure: 32892
 
 ## By year (priced)
 
@@ -16,54 +16,54 @@ Generated from 1920 cached tour pages (1092 yielded show rows).
 |---|---|
 | 1971 | 1 |
 | 1975 | 18 |
-| 1976 | 89 |
-| 1977 | 77 |
-| 1978 | 131 |
-| 1979 | 137 |
-| 1980 | 103 |
+| 1976 | 107 |
+| 1977 | 101 |
+| 1978 | 133 |
+| 1979 | 143 |
+| 1980 | 112 |
 | 1981 | 143 |
 | 1982 | 146 |
 | 1983 | 41 |
-| 1984 | 143 |
+| 1984 | 182 |
 | 1985 | 123 |
 | 1986 | 204 |
-| 1987 | 284 |
-| 1988 | 233 |
+| 1987 | 292 |
+| 1988 | 251 |
 | 1989 | 202 |
 | 1990 | 235 |
-| 1991 | 113 |
+| 1991 | 144 |
 | 1992 | 192 |
-| 1993 | 75 |
-| 1994 | 159 |
-| 1995 | 81 |
-| 1996 | 110 |
+| 1993 | 78 |
+| 1994 | 168 |
+| 1995 | 91 |
+| 1996 | 120 |
 | 1997 | 212 |
-| 1998 | 163 |
-| 1999 | 195 |
-| 2000 | 137 |
+| 1998 | 179 |
+| 1999 | 206 |
+| 2000 | 141 |
 | 2001 | 178 |
-| 2002 | 187 |
-| 2003 | 220 |
-| 2004 | 272 |
-| 2005 | 297 |
-| 2006 | 335 |
-| 2007 | 279 |
+| 2002 | 306 |
+| 2003 | 391 |
+| 2004 | 346 |
+| 2005 | 333 |
+| 2006 | 390 |
+| 2007 | 313 |
 | 2008 | 580 |
-| 2009 | 750 |
-| 2010 | 676 |
-| 2011 | 572 |
-| 2012 | 689 |
-| 2013 | 1065 |
-| 2014 | 975 |
-| 2015 | 1351 |
-| 2016 | 1421 |
-| 2017 | 2151 |
-| 2018 | 1595 |
-| 2019 | 1373 |
-| 2020 | 139 |
-| 2021 | 149 |
-| 2022 | 1186 |
-| 2023 | 813 |
+| 2009 | 812 |
+| 2010 | 707 |
+| 2011 | 616 |
+| 2012 | 716 |
+| 2013 | 1094 |
+| 2014 | 1044 |
+| 2015 | 1389 |
+| 2016 | 1562 |
+| 2017 | 2219 |
+| 2018 | 1623 |
+| 2019 | 1488 |
+| 2020 | 143 |
+| 2021 | 159 |
+| 2022 | 1206 |
+| 2023 | 830 |
 | 2024 | 959 |
 | 2025 | 582 |
 | 2026 | 127 |
@@ -72,40 +72,40 @@ Generated from 1920 cached tour pages (1092 yielded show rows).
 
 | value | priced shows |
 |---|---|
-| US | 14166 |
-| CA | 1415 |
-| GB | 1084 |
-| unknown | 842 |
-| DE | 698 |
-| AU | 643 |
-| MX | 367 |
-| ES | 278 |
-| BR | 269 |
-| FR | 252 |
-| IE | 179 |
-| NL | 174 |
-| IT | 169 |
+| US | 15405 |
+| CA | 1492 |
+| GB | 1096 |
+| unknown | 846 |
+| DE | 704 |
+| AU | 653 |
+| MX | 381 |
+| BR | 287 |
+| ES | 280 |
+| FR | 253 |
+| IE | 181 |
+| NL | 175 |
+| IT | 170 |
 | BE | 158 |
-| CH | 133 |
+| CH | 134 |
+| JP | 133 |
 | SE | 132 |
-| JP | 132 |
 | DK | 118 |
-| NZ | 114 |
+| NZ | 115 |
 | NO | 96 |
-| AR | 94 |
-| CL | 86 |
-| AT | 83 |
-| PL | 75 |
+| AR | 95 |
+| CL | 91 |
+| AT | 84 |
+| PL | 76 |
 | PT | 64 |
 
 ## By capacity bucket (priced; available, else sold)
 
 | value | priced shows |
 |---|---|
-| <3k club/theater | 623 |
-| 3k-8k theater/amph. | 2369 |
-| 8k-25k arena | 13500 |
-| 25k+ stadium | 6175 |
+| <3k club/theater | 663 |
+| 3k-8k theater/amph. | 2549 |
+| 8k-25k arena | 14415 |
+| 25k+ stadium | 6450 |
 
 ## Top 25 artists by priced shows
 
@@ -114,16 +114,19 @@ Generated from 1920 cached tour pages (1092 yielded show rows).
 | Bruce Springsteen and the E Street Band | 629 |
 | Bon Jovi | 551 |
 | U2 | 489 |
+| Cher | 485 |
 | Luis Miguel | 455 |
 | Rush | 418 |
 | Ed Sheeran | 400 |
 | Madonna | 359 |
+| Carrie Underwood | 337 |
 | The Rolling Stones | 336 |
 | Coldplay | 331 |
 | AC/DC | 308 |
 | Taylor Swift | 298 |
 | Justin Bieber | 295 |
 | Depeche Mode | 282 |
+| Phish concert tours and festivals | 281 |
 | Metallica | 277 |
 | American Idol | 271 |
 | Justin Timberlake | 266 |
@@ -133,8 +136,5 @@ Generated from 1920 cached tour pages (1092 yielded show rows).
 | Pink | 248 |
 | Celine Dion | 247 |
 | Shania Twain | 247 |
-| Katy Perry | 245 |
-| Paul McCartney | 242 |
-| Fleetwood Mac | 238 |
 
 Genre is not in the tour articles; collector-features joins it from Wikidata/MusicBrainz.

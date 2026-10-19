@@ -63,6 +63,18 @@ def py_pids(script_args: str) -> list[int]:
     return pids(r"^[^ ]*python[^ ]* (-u )?" + re.escape(script_args))
 
 
+def proc_age(pid: int) -> float | None:
+    """Wall-clock seconds since the process started."""
+    out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    try:
+        return NOW - time.mktime(time.strptime(out, "%a %b %d %H:%M:%S %Y"))
+    except ValueError:
+        return None
+
+
+STARTUP_GRACE_S = 2400  # feature builds load large caches before their first log line
+
+
 def tail(path: Path | str, n: int = 40) -> list[str]:
     try:
         with open(path, "rb") as fh:
@@ -93,20 +105,42 @@ def pushback_check(key: str, lines: list[str], alive: bool, progress_pat: str) -
         add("INFO", f"{key}.pushback", f"{key}: pushback seen and job stopped: {lines[idx[-1]][:200]!r}")
 
 
-def gap_check(key: str, times: list[float], domain: str) -> None:
-    """Request spacing >= 5 s per domain. Times are write times after the response, so allow jitter."""
-    times = sorted(t for t in times if NOW - t < 1800)
-    if len(times) < 6:
-        add("OK", f"{key}.gap", f"{domain}: too few recent requests to check spacing ({len(times)})")
+MIN_GAP_S = 5.0
+WIKIDATA_REQ_LOG = LOGS / "requests_www.wikidata.org.log"  # start<TAB>end<TAB>pid, epoch seconds
+
+
+def start_gap_check(key: str, domain: str, starts: list[float], source: str,
+                    ends: list[float] | None = None) -> None:
+    """Exact request-start spacing over the last 30 min; any start-to-start gap < 5.0 s is an ALERT."""
+    pairs = sorted((st, en) for st, en in zip(starts, ends or [None] * len(starts)) if NOW - st < 1800)
+    gaps = [b[0] - a[0] for a, b in zip(pairs, pairs[1:])]
+    if not gaps:
+        add("OK", f"{key}.gap", f"{domain}: <2 requests in the last 30 min ({source})")
         return
-    gaps = [b - a for a, b in zip(times, times[1:])]
-    short = [g for g in gaps if g < 4.0]
-    med = statistics.median(gaps)
-    if min(gaps) < 2.0 or len(short) > 0.2 * len(gaps) or med < 5.0:
-        add("ALERT", f"{key}.gap", f"{domain}: request spacing too tight: min {min(gaps):.1f}s, "
-            f"median {med:.1f}s, {len(short)}/{len(gaps)} gaps < 4s")
+    short = [round(g, 2) for g in gaps if g < MIN_GAP_S]
+    extra = ""
+    if ends:
+        idle = [b[0] - a[1] for a, b in zip(pairs, pairs[1:]) if a[1] is not None]
+        if idle:
+            extra = f"; end-to-next-start min {min(idle):.2f}s"
+    if short:
+        add("ALERT", f"{key}.gap", f"{domain}: request STARTS closer than {MIN_GAP_S}s: {short[:10]} "
+            f"({len(short)}/{len(gaps)} gaps, {source})")
     else:
-        add("OK", f"{key}.gap", f"{domain}: spacing ok (min {min(gaps):.1f}s, median {med:.1f}s, n={len(gaps)})")
+        add("OK", f"{key}.gap", f"{domain}: start-to-start min {min(gaps):.2f}s over {len(gaps)} gaps{extra} ({source})")
+
+
+def completion_gaps(key: str, times: list[float], domain: str, alert: bool) -> None:
+    """Gaps between completion times (write times after the response). These include response-time
+    jitter, so a short one is only a hint unless no start-time source exists (alert=True)."""
+    times = sorted(t for t in times if NOW - t < 1800)
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    if not gaps:
+        return
+    short = [round(g, 1) for g in gaps if g < MIN_GAP_S]
+    msg = (f"{domain}: COMPLETION-time gaps (not request starts; include latency jitter): min {min(gaps):.1f}s, "
+           f"median {statistics.median(gaps):.1f}s, {len(short)}/{len(gaps)} < {MIN_GAP_S}s")
+    add("ALERT" if alert and short else "INFO", f"{key}.cgap", msg)
 
 
 def newest_mtimes(directory: Path, n: int, pattern: str = "*") -> list[float]:
@@ -138,13 +172,19 @@ def check_prices() -> None:
             add("OK", f"{key}.alive", f"prices: fetcher pid {fetcher}, fetch_log {fmt_age(a)}; {prog}")
         if not supervisor:
             add("INFO", f"{key}.nosup", "prices: supervisor loop not running (fetcher still alive)")
-        recent = []
-        for ln in tail(flog, 60):
+        starts, done_at = [], []
+        for ln in tail(flog, 400):
             try:
-                recent.append(dt.datetime.fromisoformat(json.loads(ln)["at"]).timestamp())
+                rec = json.loads(ln)
+                done_at.append(dt.datetime.fromisoformat(rec["at"]).timestamp())
+                if "req_start" in rec:
+                    starts.append(float(rec["req_start"]))
             except (ValueError, KeyError):
                 pass
-        gap_check(key, recent, "dumps.wikimedia.org")
+        if starts:
+            start_gap_check(key, "dumps.wikimedia.org", starts, "fetch_log req_start")
+        else:  # older log lines carry only completion times
+            completion_gaps(key, done_at, "dumps.wikimedia.org", alert=True)
         return
     complete = any(" 0 to fetch" in ln for ln in lines[-5:])
     if complete:
@@ -176,7 +216,14 @@ def check_feature(name: str, script: str, progress_pat: str, done_pat: str, outp
     prog = last_match(lines, progress_pat)
     la = age(log)
     if alive:
-        if la is None or la > window:
+        pa = proc_age(alive[0])
+        if not lines and pa is not None and pa < STARTUP_GRACE_S:
+            add("OK", f"{key}.starting", f"{name}: pid {alive} started {fmt_age(pa)}, still loading (no log yet)")
+        elif (la is None or la > window) and NOW - last_request_by_pid().get(alive[0], 0) < window:
+            req = NOW - last_request_by_pid()[alive[0]]
+            add("OK", f"{key}.alive", f"{name}: pid {alive}, log quiet {fmt_age(la)} but last request "
+                f"{fmt_age(req)} (quiet phase); {prog}")
+        elif la is None or la > window:
             add("ALERT", f"{key}.stall", f"{name}: alive (pid {alive}) but log last write {fmt_age(la)}; "
                 f"tail: {lines[-3:]}")
         else:
@@ -193,8 +240,38 @@ def check_feature(name: str, script: str, progress_pat: str, done_pat: str, outp
         f"last progress {prog!r}; tail: {lines[-4:]}")
 
 
-def check_wikidata_spacing() -> None:
-    gap_check("wikidata", newest_mtimes(RAW / "wikidata", 60, "*.json"), "www.wikidata.org")
+def read_req_log(path: Path) -> list[tuple[float, float, int]]:
+    rows = []
+    for ln in tail(path, 600):
+        parts = ln.split("\t")
+        try:
+            rows.append((float(parts[0]), float(parts[1]), int(parts[2])))
+        except (ValueError, IndexError):
+            pass
+    return rows
+
+
+def last_request_by_pid() -> dict[int, float]:
+    """Latest request end per pid across all per-domain request logs (progress for quiet phases)."""
+    last: dict[int, float] = {}
+    for path in LOGS.glob("requests_*.log"):
+        for _, en, pid in read_req_log(path):
+            last[pid] = max(last.get(pid, 0.0), en)
+    return last
+
+
+def check_spacing() -> None:
+    for path in sorted(LOGS.glob("requests_*.log")):
+        domain = path.stem.removeprefix("requests_")
+        rows = read_req_log(path)
+        if rows:
+            start_gap_check(domain.split(".")[-2], domain, [r[0] for r in rows], "requests log",
+                            [r[1] for r in rows])
+    if not (LOGS / "requests_www.wikidata.org.log").exists():
+        completion_gaps("wikidata", newest_mtimes(RAW / "wikidata", 60, "*.json"), "www.wikidata.org", alert=True)
+
+
+def check_venue_outputs() -> None:
     vp = age(INTERIM / "features_venue.parquet")
     add("OK", "venue.parquet", f"features_venue.parquet written {fmt_age(vp)}")
     if last_match(tail(LOGS / "features_venue.log", 400), r"PRICED_MILESTONE"):
@@ -256,7 +333,9 @@ def check_weather() -> None:
         for t in om:
             if not clusters or t - clusters[-1] > 1.0:
                 clusters.append(t)
-        gap_check(key, clusters, "archive-api.open-meteo.com")
+        # no cross-process start-time lock for Open-Meteo (spacing is in-process), so completion gaps
+        # are the best measure available: flag any under 5 s for a look
+        completion_gaps(key, clusters, "archive-api.open-meteo.com", alert=True)
     wp = age(INTERIM / "features_weather.parquet")
     add("OK", "weather.parquet", f"features_weather.parquet written {fmt_age(wp)}")
 
@@ -312,7 +391,7 @@ def main() -> None:
                                      r"^done; transient", ["features_venue.parquet"], 900),
                lambda: check_feature("features_artist", "features_artist.py", r"artist \d+/\d+",
                                      r"^transient network skips", ["features_artist.parquet"], 1200),
-               check_wikidata_spacing, check_weather, check_rebrowser, check_git, check_disk):
+               check_spacing, check_venue_outputs, check_weather, check_rebrowser, check_git, check_disk):
         try:
             fn()
         except Exception as exc:  # a broken check must not hide the others

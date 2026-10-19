@@ -7,6 +7,7 @@ after a block.
 """
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
@@ -49,23 +50,37 @@ def transient_skips() -> int:
     return _net["skipped"]
 
 
-def _wait(domain: str) -> None:
-    """Block until >= MIN_GAP_S since the last request start to this domain, across
-    all features_* processes (file lock per domain under data/raw/.locks/)."""
+@contextlib.contextmanager
+def _domain_slot(domain: str):
+    """Hold the per-domain cross-process lock for the whole request.
+
+    The next request to the domain (any features_* process) can start only
+    >= MIN_GAP_S after this one FINISHED, so both start-to-start and
+    finish-to-finish spacing are >= MIN_GAP_S. Start/end times are appended to
+    data/raw/logs/requests_<domain>.log for audit."""
     lock = RAW / ".locks" / f"{domain}.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     with open(lock, "a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
-        fh.seek(0)
-        raw = fh.read().strip()
-        delay = (float(raw) if raw else 0.0) + MIN_GAP_S - time.time()
-        if delay > 0:
-            time.sleep(delay)
-        fh.seek(0)
-        fh.truncate()
-        fh.write(repr(time.time()))
-        fh.flush()
-        fcntl.flock(fh, fcntl.LOCK_UN)
+        try:
+            fh.seek(0)
+            raw = fh.read().strip()
+            delay = (float(raw) if raw else 0.0) + MIN_GAP_S - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            t0 = time.time()
+            try:
+                yield
+            finally:
+                t1 = time.time()
+                fh.seek(0)
+                fh.truncate()
+                fh.write(repr(t1))
+                fh.flush()
+                with open(RAW / "logs" / f"requests_{domain}.log", "a") as log:
+                    log.write(f"{t0:.3f}\t{t1:.3f}\t{os.getpid()}\n")
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def _check(resp: requests.Response) -> None:
@@ -82,12 +97,17 @@ def get_json_cached(url: str, cache_path: Path, *, method: str = "GET", body: di
     if cache_path.exists():
         data = json.loads(cache_path.read_text())
         return None if isinstance(data, dict) and data.get("_status") == 404 else data
-    _wait(urlparse(url).netloc)
     try:
-        if method == "POST":
-            resp = _session.post(url, json=body, timeout=60)
-        else:
-            resp = _session.get(url, timeout=60)
+        for _hop in range(3):  # redirects are followed manually, each as its own throttled request
+            with _domain_slot(urlparse(url).netloc):
+                if method == "POST":
+                    resp = _session.post(url, json=body, timeout=60, allow_redirects=False)
+                else:
+                    resp = _session.get(url, timeout=60, allow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308) and resp.headers.get("Location"):
+                url = requests.compat.urljoin(url, resp.headers["Location"])
+                continue
+            break
     except TRANSIENT as exc:
         # Transient network error (not server pushback): log, skip, leave uncached.
         _net["consecutive"] += 1
@@ -120,8 +140,8 @@ def download_file(url: str, dest: Path, expected_size: int | None = None) -> Pat
     part = dest.with_suffix(dest.suffix + ".part")
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
-    _wait(urlparse(url).netloc)
-    with _session.get(url, headers=headers, stream=True, timeout=120) as resp:
+    with _domain_slot(urlparse(url).netloc), \
+            _session.get(url, headers=headers, stream=True, timeout=120) as resp:
         _check(resp)
         if have and resp.status_code != 206:
             have = 0  # server ignored Range; start over

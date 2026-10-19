@@ -22,11 +22,12 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
-
-import requests
 from pathlib import Path
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wikidump_http  # noqa: E402
 from wikidump_http import CACHE, Blocked, get_range  # noqa: E402
 
 DUMP = "20261001"
@@ -156,11 +157,10 @@ def fetch(max_requests: int | None = None) -> None:
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
             # a stalled connection is not pushback: skip this stream (picked up on the next run)
             fails += 1
-            print(f"network error on {start}-{end} ({exc.__class__.__name__}); {fails} in a row", flush=True)
-            if fails >= 5:
-                print("5 consecutive network errors; stopping", flush=True)
-                return
-            time.sleep(30)
+            wait = min(30 * 2 ** (fails - 1), 900)  # back off: 30 s doubling, capped at 15 min
+            print(f"network error on {start}-{end} ({exc.__class__.__name__}); {fails} in a row; "
+                  f"waiting {wait} s", flush=True)
+            time.sleep(wait)
             continue
         fails = 0
         if len(raw) != end - start:
@@ -173,6 +173,7 @@ def fetch(max_requests: int | None = None) -> None:
         done += 1
         with open(FETCH_LOG, "a") as fh:
             fh.write(json.dumps({"start": start, "end": end, "bytes": len(raw), "secs": round(time.time() - t0, 1),
+                                 "req_start": round(wikidump_http.LAST_REQUEST_START, 3),
                                  "tour_pages": kept, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}) + "\n")
         if done % 25 == 0:
             print(f"fetched {done}/{len(todo)} streams; pages on disk {len(list(PAGES.glob('*.json')))}", flush=True)

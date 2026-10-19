@@ -19,7 +19,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "raw" / "wikipedia_dumps"
 UA = "TicketPriceResearch/0.1 (personal research; contact: rudraayyagari@gmail.com)"
-MIN_GAP_S = 5.0
+MIN_GAP_S = 5.2  # rule is >= 5 s between request starts; 0.2 s margin
 _LOCK = CACHE / ".domain_gap.lock"
 
 
@@ -54,21 +54,41 @@ class _NoCookies:  # http.cookiejar policy that refuses every cookie
 _S = _session()
 
 
-def _wait_turn() -> None:
-    """Block until >= MIN_GAP_S since the last request start (any process)."""
+def _wait_turn() -> float:
+    """Block until >= MIN_GAP_S since the last request (any process); return the start stamp.
+
+    The lock holds the latest *upper bound* on when a request was sent: it is stamped here
+    and again by _mark_sent() once response headers arrive (the send happened in between),
+    so connection setup time can never shrink the gap between two sends."""
     CACHE.mkdir(parents=True, exist_ok=True)
     with open(_LOCK, "a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
         raw = fh.read().strip()
         last = float(raw) if raw else 0.0
-        delay = last + MIN_GAP_S - time.time()
-        if delay > 0:
+        while (delay := last + MIN_GAP_S - time.time()) > 0:
             time.sleep(delay)
+        now = time.time()
         fh.seek(0)
         fh.truncate()
-        fh.write(repr(time.time()))
+        fh.write(repr(now))
         fh.flush()
+        fcntl.flock(fh, fcntl.LOCK_UN)
+    return now
+
+
+def _mark_sent() -> None:
+    """Advance the lock stamp to now (called once headers arrive), never moving it back."""
+    with open(_LOCK, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        raw = fh.read().strip()
+        now = time.time()
+        if not raw or float(raw) < now:
+            fh.seek(0)
+            fh.truncate()
+            fh.write(repr(now))
+            fh.flush()
         fcntl.flock(fh, fcntl.LOCK_UN)
 
 
@@ -85,7 +105,10 @@ def get_small(url: str, dest: Path) -> bytes:
     if dest.exists():
         return dest.read_bytes()
     _wait_turn()
-    r = _S.get(url, timeout=60)
+    try:
+        r = _S.get(url, timeout=60)
+    finally:
+        _mark_sent()
     if r.status_code != 404:
         _check(r)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +142,11 @@ def _download_once(url: str, dest: Path, expected_size: int | None = None,
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
     _wait_turn()
-    with _S.get(url, headers=headers, stream=True, timeout=(30, 300)) as r:
+    try:
+        r = _S.get(url, headers=headers, stream=True, timeout=(30, 300))
+    finally:
+        _mark_sent()
+    with r:
         _check(r)
         if have and r.status_code != 206:
             raise RuntimeError(f"server ignored resume Range ({r.status_code})")
@@ -135,10 +162,20 @@ def _download_once(url: str, dest: Path, expected_size: int | None = None,
 
 
 def get_range(url: str, start: int, end: int) -> bytes:
-    """One Range request for bytes [start, end) (no caching here; callers cache)."""
-    _wait_turn()
-    r = _S.get(url, headers={"Range": f"bytes={start}-{end - 1}"}, timeout=120)
-    _check(r)
-    if r.status_code != 206:
-        raise RuntimeError(f"expected 206, got {r.status_code} for {url}")
-    return r.content
+    """One Range request for bytes [start, end) (no caching here; callers cache).
+
+    LAST_REQUEST_START holds the wall-clock start stamp for callers' logs."""
+    global LAST_REQUEST_START
+    LAST_REQUEST_START = _wait_turn()
+    try:
+        r = _S.get(url, headers={"Range": f"bytes={start}-{end - 1}"}, stream=True, timeout=(30, 120))
+    finally:
+        _mark_sent()
+    with r:
+        _check(r)
+        if r.status_code != 206:
+            raise RuntimeError(f"expected 206, got {r.status_code} for {url}")
+        return r.content
+
+
+LAST_REQUEST_START = 0.0
