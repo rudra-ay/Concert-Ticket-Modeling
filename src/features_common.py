@@ -7,6 +7,7 @@ after a block.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -25,7 +26,6 @@ OUT = Path(os.environ.get("FEATURES_OUT", INTERIM))
 UA = "TicketPriceResearch/0.1 (personal research; contact: rudraayyagari@gmail.com)"
 MIN_GAP_S = 5.0
 
-_last_hit: dict[str, float] = {}
 _session = requests.Session()
 _session.headers.update({"User-Agent": UA, "Accept-Encoding": "gzip"})
 
@@ -34,11 +34,38 @@ class Blocked(RuntimeError):
     """Raised on 403/429/challenge. Callers must stop, not retry."""
 
 
+class NetworkDown(RuntimeError):
+    """Raised after MAX_CONSECUTIVE_NET_ERRORS transient failures in a row. Stop the run."""
+
+
+TRANSIENT = (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+             requests.exceptions.ChunkedEncodingError)
+MAX_CONSECUTIVE_NET_ERRORS = 3
+_net = {"consecutive": 0, "skipped": 0}
+
+
+def transient_skips() -> int:
+    """Items skipped this run because of transient network errors (left uncached; a rerun fills them)."""
+    return _net["skipped"]
+
+
 def _wait(domain: str) -> None:
-    gap = time.monotonic() - _last_hit.get(domain, 0.0)
-    if gap < MIN_GAP_S:
-        time.sleep(MIN_GAP_S - gap)
-    _last_hit[domain] = time.monotonic()
+    """Block until >= MIN_GAP_S since the last request start to this domain, across
+    all features_* processes (file lock per domain under data/raw/.locks/)."""
+    lock = RAW / ".locks" / f"{domain}.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        raw = fh.read().strip()
+        delay = (float(raw) if raw else 0.0) + MIN_GAP_S - time.time()
+        if delay > 0:
+            time.sleep(delay)
+        fh.seek(0)
+        fh.truncate()
+        fh.write(repr(time.time()))
+        fh.flush()
+        fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def _check(resp: requests.Response) -> None:
@@ -56,10 +83,22 @@ def get_json_cached(url: str, cache_path: Path, *, method: str = "GET", body: di
         data = json.loads(cache_path.read_text())
         return None if isinstance(data, dict) and data.get("_status") == 404 else data
     _wait(urlparse(url).netloc)
-    if method == "POST":
-        resp = _session.post(url, json=body, timeout=60)
-    else:
-        resp = _session.get(url, timeout=60)
+    try:
+        if method == "POST":
+            resp = _session.post(url, json=body, timeout=60)
+        else:
+            resp = _session.get(url, timeout=60)
+    except TRANSIENT as exc:
+        # Transient network error (not server pushback): log, skip, leave uncached.
+        _net["consecutive"] += 1
+        _net["skipped"] += 1
+        print(f"net_error skip {url} ({exc.__class__.__name__}); "
+              f"{_net['consecutive']}/{MAX_CONSECUTIVE_NET_ERRORS} consecutive", flush=True)
+        if _net["consecutive"] >= MAX_CONSECUTIVE_NET_ERRORS:
+            raise NetworkDown(f"{_net['consecutive']} consecutive network errors; last: {exc!r}") from exc
+        time.sleep(30)
+        return None
+    _net["consecutive"] = 0
     _check(resp)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     if resp.status_code == 404 and ok_404:

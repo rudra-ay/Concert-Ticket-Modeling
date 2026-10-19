@@ -18,7 +18,7 @@ from datetime import date
 import pandas as pd
 
 import features_wikidata as W
-from features_common import OUT, RAW, get_json_cached
+from features_common import OUT, RAW, get_json_cached, transient_skips
 from features_musicbrainz import artists as mb_artists
 from features_musicbrainz import genre_tags as mb_genre_tags
 from features_pageviews import fetch_daily, hype_features
@@ -84,7 +84,9 @@ def listenbrainz(mbids: list[str]) -> dict[str, dict]:
         batch = sorted(todo[i:i + 100])
         key = hashlib.sha1("".join(batch).encode()).hexdigest()[:16]
         data = get_json_cached(LB_URL, LB_CACHE / f"popularity_{key}.json", method="POST",
-                               body={"artist_mbids": batch}) or []
+                               body={"artist_mbids": batch})
+        if data is None:  # transient skip: cache nothing, a rerun retries this batch
+            continue
         got = {d.get("artist_mbid"): d for d in data}
         per.mkdir(parents=True, exist_ok=True)
         for m in batch:  # store misses too, so they are not re-requested
@@ -240,5 +242,6 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 if __name__ == "__main__":
     a, s = build()
+    print(f"transient network skips this run: {transient_skips()} (rerun from cache to fill)")
     print(a.notna().mean().round(3).to_string())
     print(s.notna().mean().round(3).to_string())

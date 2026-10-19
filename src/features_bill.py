@@ -43,10 +43,32 @@ def _raw_acts(raw) -> list[str] | None:
     return [p for p in parts if p and p.lower() not in NO_OPENER]
 
 
+ALBUM_CLASSES = {"Q482994", "Q208569", "Q169930", "Q209939", "Q222910", "Q1242743"}  # album, studio, EP, live, compilation, mixtape
+
+
+def resolve_album(res: Resolver, album: str, artist_titles: list[str], artist_qids: set[str]) -> str | None:
+    """Enwiki title of the tour's album, verified on Wikidata: an album-type item
+    whose performer (P175) is one of the headliners. Unverified guesses are dropped."""
+    names = [a.strip() for a in re.split(r"\s*\|\s*", album or "") if a.strip()]
+    for name in names:
+        if name.lower() in {"various", "none", "n/a"}:
+            continue
+        cands = [f"{name} ({re.sub(r'_\(.*\)$', '', t).replace('_', ' ')} album)" for t in artist_titles]
+        cands += [f"{name} (album)", name]
+        for c in cands:
+            title, q = res.resolve(c)
+            if not q:
+                continue
+            ent = W.entity(q)
+            if ALBUM_CLASSES.intersection(W.values(ent, "P31")) and artist_qids.intersection(W.values(ent, "P175")):
+                return title
+    return None
+
+
 def build() -> pd.DataFrame:
     spine = load_spine()
     raw = pd.read_parquet(__import__("features_spine").spine_path())
-    extra = raw[["show_id"] + [c for c in ("opening_acts_wikilinks", "tour_page_id", "table_caption")
+    extra = raw[["show_id"] + [c for c in ("opening_acts_wikilinks", "tour_page_id", "table_caption", "tour_infobox_album")
                                if c in raw.columns]]
     spine = spine.merge(extra, on="show_id", how="left")
     res = Resolver()
@@ -63,6 +85,7 @@ def build() -> pd.DataFrame:
     tour_cats = mem.groupby("page_id")["category"].apply(lambda s: "; ".join(sorted(s))).to_dict()
 
     series: dict[str, pd.Series | None] = {}
+    album_cache: dict = {}
     rows = []
     for s in spine.itertuples(index=False):
         headliners = split_links(s.artist_wikilink) or [s.artist_name]
@@ -96,6 +119,19 @@ def build() -> pd.DataFrame:
                        if s.show_date else np.nan)
         pvs_ok = [x for x in pvs if pd.notna(x)]
 
+        # Set-list proxy: attention to the album being toured (setlist.fm needs permission).
+        album_key = (getattr(s, "tour_infobox_album", None), s.artist_wikilink)
+        if album_key not in album_cache:
+            resolved_h = [res.resolve(h) for h in headliners]
+            album_cache[album_key] = resolve_album(
+                res, album_key[0] if isinstance(album_key[0], str) else "",
+                [t for t, _ in resolved_h if t], {q for _, q in resolved_h if q})
+        album_title = album_cache[album_key]
+        if album_title and album_title not in series:
+            series[album_title] = fetch_daily(album_title)
+        album_hype = hype_features(series.get(album_title), s.show_date, prefix="album") \
+            if album_title and s.show_date else {}
+
         tour = str(s.tour_title or "")
         fw = FAREWELL.search(tour)
         ru = REUNION.search(tour)
@@ -128,6 +164,9 @@ def build() -> pd.DataFrame:
             "n_openers_with_pv": len(pvs_ok),
             "opener_pv_mean_90d_max": max(pvs_ok) if pvs_ok else np.nan,
             "opener_pv_mean_90d_sum": sum(pvs_ok) if pvs_ok else np.nan,
+            "tour_album_title": album_title,
+            "album_pv_mean_90d": album_hype.get("album_mean_90d", np.nan),
+            "album_pv_momentum": album_hype.get("album_momentum", np.nan),
             "festival_flag": fest_reason is not None,
             "festival_reason": fest_reason,
             "farewell_flag": bool(fw or fw_cat),

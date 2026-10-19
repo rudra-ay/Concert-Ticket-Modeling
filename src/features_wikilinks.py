@@ -90,7 +90,7 @@ class Resolver:
 
     def resolve(self, title: str | None) -> tuple[str | None, str | None]:
         """Return (canonical_title, qid). Fragment (#section) is dropped."""
-        if not title:
+        if not isinstance(title, str) or not title.strip():  # None / NaN / NA
             return None, None
         key = wiki_title_key(title.split("#")[0])
         pid = self.title_to_id.get(key)
