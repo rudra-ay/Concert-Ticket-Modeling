@@ -1,0 +1,125 @@
+
+# gametime-dataset
+
+## gametime-dataset/event-listings: 30,000 rows, 30 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, listingId, eventId, pricePrefee, priceTotal, priceFaceValue, salesTax, preTaxTotal, availableLots, section, row, sectionGroup, seats, deliveryType, transferType, ticketType, deal, savingsAmount, savingsPercent, disclosures, inHandDate, eventName, eventCategory, eventDatetimeUtc, eventVenueId
+LOCKED ([PREMIUM]): pricePrefee, priceTotal, priceFaceValue, salesTax, preTaxTotal, savingsAmount, savingsPercent
+daily files: 2026-09-06 .. 2026-10-05
+_firstSeenAt: 2026-09-06 13:17:11.562000+00:00 .. 2026-10-05 23:59:59.287000+00:00
+_lastSeenAt: 2026-09-06 13:17:11.562000+00:00 .. 2026-10-17 12:13:44.365000+00:00
+record lifetime (lastSeen - firstSeen, days): median 1.13, p90 12.46, share 0: 43%
+distinct eventId: 826
+events seen on >=2 daily files: 138; >=7: 81; max days for one event: 25
+eventCategory counts: {'nfl': 19271, 'music': 5562, 'theater': 1482, 'mls': 802, 'nhl': 644, 'comedy': 619, 'mlb': 331, 'talk': 248}
+unlocked coarse price/availability proxies: ['deal']
+  deal: {nan: 24424, 'great': 2818, 'amazing': 1658, 'cheapest': 716, 'super': 337, 'zone': 47}
+
+## gametime-dataset/events: 20,101 rows, 27 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, eventId, name, category, datetimeLocal, datetimeUtc, salesCutOff, tbd, timeTbd, dateTbd, minPriceTotal, minPricePrefee, maxPriceTotal, maxPricePrefee, zoneDealPriceTotal, flashDealPriceTotal, hasExclusives, mapless, venueId, performerIds, popularityScore, trendingScore
+LOCKED ([PREMIUM]): minPriceTotal, minPricePrefee, maxPriceTotal, maxPricePrefee, zoneDealPriceTotal, flashDealPriceTotal, popularityScore, trendingScore
+daily files: 2026-09-06 .. 2026-10-05
+_firstSeenAt: 2026-09-06 10:04:22.411000+00:00 .. 2026-10-05 21:04:45.271000+00:00
+_lastSeenAt: 2026-09-08 16:34:26.465000+00:00 .. 2026-10-18 12:18:46.471000+00:00
+record lifetime (lastSeen - firstSeen, days): median 12.63, p90 13.59, share 0: 1%
+distinct eventId: 20,101
+events seen on >=2 daily files: 0; >=7: 0; max days for one event: 1
+category counts: {'music': 8111, 'theater': 5295, 'comedy': 2573, 'cbb': 956, 'wcbb': 436, 'echl': 353, 'vball': 291, 'cho': 287}
+
+## gametime-dataset/performers: 1,000 rows, 1 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, performerId, name, shortName, mediumName, abbrev, slug, category, categoryGroup, primaryGenre, genres, primaryColor, heroImageUrl, headerImageUrl, logoImageUrl
+LOCKED ([PREMIUM]): heroImageUrl, headerImageUrl, logoImageUrl
+_firstSeenAt: 2025-11-19 19:35:42.833000+00:00 .. 2026-10-18 12:19:52.291000+00:00
+_lastSeenAt: 2026-10-18 12:19:45.416000+00:00 .. 2026-10-18 12:19:52.291000+00:00
+record lifetime (lastSeen - firstSeen, days): median 332.70, p90 332.70, share 0: 1%
+category counts: {'cbb': 253, 'music': 207, 'theater': 168, 'wcbb': 130, 'comedy': 98, 'nhl': 32, 'nba': 30, 'other': 17}
+
+## gametime-dataset/venues: 1,000 rows, 1 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, venueId, name, slug, city, state, metro, timezone, latitude, longitude, addressCountryCode, addressCity, addressState, addressPostalCode, addressStreet, addressExtended, imageUrl
+LOCKED ([PREMIUM]): imageUrl
+_firstSeenAt: 2025-11-19 19:35:42.833000+00:00 .. 2026-10-17 09:21:22.666000+00:00
+_lastSeenAt: 2026-10-18 12:19:38.047000+00:00 .. 2026-10-18 12:19:52.291000+00:00
+record lifetime (lastSeen - firstSeen, days): median 332.70, p90 332.70, share 0: 0%
+
+# seatgeek-dataset
+
+## seatgeek-dataset/event-listings: 30,000 rows, 30 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, listingId, eventId, price, priceWithFees, fee, section, sectionFull, row, quantity, seats, inHandDate, deliveryType, marketplace, dealBucket, dealScore, splitType
+LOCKED ([PREMIUM]): price, priceWithFees, fee, dealScore
+daily files: 2026-09-05 .. 2026-10-04
+_firstSeenAt: 2026-09-05 23:57:04.160000+00:00 .. 2026-10-04 23:27:45.409000+00:00
+_lastSeenAt: 2026-09-05 23:57:04.160000+00:00 .. 2026-10-17 00:45:16.507000+00:00
+record lifetime (lastSeen - firstSeen, days): median 0.99, p90 12.96, share 0: 47%
+distinct eventId: 520
+events seen on >=2 daily files: 95; >=7: 0; max days for one event: 6
+unlocked coarse price/availability proxies: ['dealBucket']
+  dealBucket: {'1': 9594, '0': 6358, '2': 6099, '5': 3317, '3': 2455, '4': 2091}
+
+## seatgeek-dataset/events: 2,926 rows, 28 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, eventId, name, shortName, type, datetimeUtc, endDatetimeUtc, dateTbd, timeTbd, datetimeTbd, status, scheduleStatus, conditional, contingent, isOpen, isVisible, isHybrid, eventScore, popularityScore, url, createdAt, announceDate, visibleAt, visibleUntilUtc, listingCount, ticketCount, averagePrice, lowestPrice, highestPrice, medianPrice, lowestSgBasePrice, venueId, performerIds, taxonomyName, taxonomySubName, ticketmasterId, stubhubId, integratedProvider, integratedProviderId, isMapped, isGa, seatSelectionEnabled
+LOCKED ([PREMIUM]): eventScore, popularityScore, listingCount, ticketCount, averagePrice, lowestPrice, highestPrice, medianPrice, lowestSgBasePrice
+daily files: 2026-09-05 .. 2026-10-04
+_firstSeenAt: 2026-09-05 22:01:35.891000+00:00 .. 2026-10-04 22:01:12.468000+00:00
+_lastSeenAt: 2026-09-05 22:01:35.891000+00:00 .. 2026-10-16 22:04:37.415000+00:00
+createdAt: 2025-08-26 18:59:58+00:00 .. 2026-09-30 15:59:18+00:00
+record lifetime (lastSeen - firstSeen, days): median 0.00, p90 0.00, share 0: 100%
+distinct eventId: 2,893
+events seen on >=2 daily files: 33; >=7: 0; max days for one event: 2
+taxonomyName counts: {'sports': 2926}
+type counts: {'mlb': 1552, 'nba': 1001, 'stadium_tours': 213, 'nhl': 101, 'nfl': 58, 'baseball': 1}
+
+## seatgeek-dataset/performers: 263 rows, 1 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, performerId, name, shortName, type, slug, url, heroImageUrl, bannerImageUrl, score, popularity, homeVenueId, primaryColor, iconicColor, isEvent, divisionName, divisionShortName, taxonomyName, taxonomySubName
+LOCKED ([PREMIUM]): heroImageUrl, bannerImageUrl
+_firstSeenAt: 2025-10-10 22:01:39.016000+00:00 .. 2026-09-30 22:02:05.281000+00:00
+_lastSeenAt: 2025-10-13 22:11:00.768000+00:00 .. 2026-10-17 22:07:34.624000+00:00
+record lifetime (lastSeen - firstSeen, days): median 350.99, p90 351.00, share 0: 2%
+taxonomyName counts: {'sports': 258, 'concert': 5}
+type counts: {'nfl': 68, 'nba': 50, 'mlb': 50, 'nhl': 49, 'baseball': 25, 'stadium_tours': 6, 'minor_league_baseball': 6, 'band': 5}
+
+## seatgeek-dataset/venues: 194 rows, 1 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, venueId, name, slug, url, addressStreet, addressCity, addressState, addressCountry, addressPostalCode, timezone, latitude, longitude, capacity, score, popularity, metroCode
+LOCKED ([PREMIUM]): none
+_firstSeenAt: 2025-10-10 08:31:20.154000+00:00 .. 2026-10-15 22:18:20.012000+00:00
+_lastSeenAt: 2025-10-14 22:11:09.153000+00:00 .. 2026-10-17 22:07:34.624000+00:00
+record lifetime (lastSeen - firstSeen, days): median 351.51, p90 372.56, share 0: 2%
+
+# stubhub-dataset
+
+## stubhub-dataset/event-listings: 30,000 rows, 30 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, listingId, eventId, price, faceValue, section, row, seat, seatFrom, seatTo, quantity, availableQuantities, ticketClass, ticketClassName, ticketTypeId, ticketTypeName, listingTypeId, starRating, dealScore, discount, seatQualityScore, isSeatedTogether, isSpeculativeRow, listingNotes, createdAt
+LOCKED ([PREMIUM]): price, faceValue, starRating, dealScore, discount, seatQualityScore
+daily files: 2026-09-05 .. 2026-10-04
+_firstSeenAt: 2026-09-05 23:52:49.856000+00:00 .. 2026-10-04 23:24:18.924000+00:00
+_lastSeenAt: 2026-09-05 23:52:54.435000+00:00 .. 2026-10-17 23:38:17.212000+00:00
+createdAt: 2026-04-21 23:23:21+00:00 .. 2026-10-04 23:23:12+00:00
+record lifetime (lastSeen - firstSeen, days): median 2.01, p90 12.50, share 0: 34%
+distinct eventId: 817
+events seen on >=2 daily files: 302; >=7: 60; max days for one event: 8
+
+## stubhub-dataset/events: 1,606 rows, 29 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, eventId, name, url, eventStartDatetime, isTbd, isDateConfirmed, isTimeConfirmed, eventState, eventAvailabilityState, venueId, minPrice, medianPriceBucket, isUnderHundred, hasActiveListings, ticketsRemaining, isFastSelling, onSaleDateTime, rescheduledFromDate, isParkingEvent, isMultidayEvent
+LOCKED ([PREMIUM]): minPrice, ticketsRemaining, isFastSelling
+daily files: 2026-09-05 .. 2026-10-03
+_firstSeenAt: 2026-09-05 22:00:17.469000+00:00 .. 2026-10-03 22:02:35.323000+00:00
+_lastSeenAt: 2026-09-05 22:00:17.469000+00:00 .. 2026-10-03 22:02:35.323000+00:00
+record lifetime (lastSeen - firstSeen, days): median 0.00, p90 0.00, share 0: 100%
+distinct eventId: 1,606
+events seen on >=2 daily files: 0; >=7: 0; max days for one event: 1
+unlocked coarse price/availability proxies: ['medianPriceBucket', 'isUnderHundred', 'hasActiveListings', 'eventAvailabilityState']
+  medianPriceBucket: {'1.0': 649, '0.0': 465, '2.0': 245, '3.0': 165, nan: 82}
+  isUnderHundred: {'False': 1606}
+  hasActiveListings: {'True': 1537, 'False': 69}
+  eventAvailabilityState: {'0': 1538, '1': 65, '2': 3}
+
+## stubhub-dataset/venues: 224 rows, 1 file(s)
+columns: _primaryKey, _firstSeenAt, _lastSeenAt, venueId, name, addressCity, addressFull, addressCountryCode, addressCountry, timezoneOffset
+LOCKED ([PREMIUM]): none
+_firstSeenAt: 2025-10-10 00:00:00.016000+00:00 .. 2026-09-30 22:04:02.444000+00:00
+_lastSeenAt: 2025-10-14 22:02:21.039000+00:00 .. 2026-10-17 22:05:05.172000+00:00
+record lifetime (lastSeen - firstSeen, days): median 332.50, p90 372.90, share 0: 4%
+
+## StubHub PATH check (listings joined to events)
+listing rows whose event is in the events sample: 46.2%
+days from listing firstSeen to show: {'count': 13874.0, 'mean': 89.8, 'std': 60.3, 'min': 2.7, '10%': 25.6, '50%': 72.0, '90%': 181.1, 'max': 217.9}
+events with listings: 371; listings/event median 19; events with >=7 snapshot days: 56; span of days_out p90 6.0
+events tracked on >=2 days: 0; of which medianPriceBucket ever changes: 0

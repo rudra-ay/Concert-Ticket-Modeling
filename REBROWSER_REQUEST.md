@@ -65,3 +65,28 @@ I'm running a personal, non-commercial research project on how concert ticket re
 ## What the public sample gives us (profiled 2026-10-18; see below)
 
 See the "Profile of the public preview" section at the end of this file. In short, the public sample **cannot support PATH**. All price fields are `[PREMIUM]`-masked, and each daily file is a separate sample rather than a panel, so no event can be followed from 60 days out to the show. The research grant, **with premium fields approved**, is the only Rebrowser route that does.
+
+## Profile of the public preview (downloaded 2026-10-18/19, no login)
+
+Download: `src/rebrowser_download.py` (Hugging Face, ungated, no token; robots allows all; one UA; 5 s or more between requests; parquet only, because the CSVs duplicate it). It's 8.4 MB under `data/raw/rebrowser/`. The full profile is in `data/interim/rebrowser_profile.txt` (`src/rebrowser_profile.py`). The run stopped three times on connection resets or timeouts while the laptop slept. These were not 403s or challenges, and the run resumed from cache each time.
+
+| Dataset / entity | Rows (sample) | Daily files | Locked (`[PREMIUM]`) | Panel? |
+|---|---|---|---|---|
+| StubHub listings | 30,000 (817 events) | 2026-09-05..10-04 | `price`, `faceValue`, `dealScore`, `starRating`, `discount`, `seatQualityScore` | Listings are tracked by first/last seen: median life 2 days, p90 12.5 days. 60 events appear on 7 or more daily files, max 8 |
+| StubHub events | 1,606 | 2026-09-05..10-03 | `minPrice`, `ticketsRemaining`, `isFastSelling` | **No.** Each event appears in exactly one daily file. `medianPriceBucket` (0–3) is unlocked but never observed twice for the same event. `isUnderHundred` is False for 100% of rows (looks like a placeholder) |
+| StubHub venues | 224 | single file | none | – |
+| Gametime listings | 30,000 (826 events; 5,562 rows music) | 2026-09-06..10-05 | all 7 price fields | Median life 1.1 days. 81 events on 7 or more files, max 25 |
+| Gametime events | 20,101 (8,111 music, show dates 2026-09-10..12-10) | 2026-09-06..10-05 | min/max price, deal prices, popularity | **No.** One row per event (the latest state) |
+| Gametime performers / venues | 1,000 / 1,000 | single file | images only | – |
+| SeatGeek listings | 30,000 (520 events) | 2026-09-05..10-04 | `price`, `priceWithFees`, `fee`, `dealScore` | Max 6 days per event |
+| SeatGeek events | 2,926 | 2026-09-05..10-04 | all price stats, listing and ticket counts | **No**, and the sample is **100% sports** (MLB, NBA, NHL, NFL, stadium tours): zero concerts. `ticketmasterId` 37% filled, `stubhubId` 16% |
+| SeatGeek performers / venues | 263 / 194 | single file | images only | – |
+
+**Can the public sample support PATH? No.**
+1. Every price field (listing and event level, on all three datasets) is masked as `[PREMIUM]`.
+2. Even ignoring price, the samples aren't panels. Each daily file is a separate draw of about 1,000 rows. No event in any events table is observed on two days, and no listing-level event series reaches more than 25 days, so far short of 60 days to the show.
+3. The SeatGeek sample contains no concerts at all.
+
+**What it is useful for now:** schema and field semantics for writing the loaders ahead of the grant; venue directories (StubHub 224, Gametime 1,000 with lat/lon and timezone, SeatGeek 194 with **capacity**); Gametime performer genres; listing-level non-price structure (sections, ticket classes, split quantities, and listing lifetimes); and the `ticketmasterId` cross-ID mechanism.
+
+**After the grant (with premium fields approved):** StubHub listings with `_firstSeenAt`/`_lastSeenAt` and all-in `price` from 2024-03-31 make it possible to rebuild per-event daily min and median paths from 60 or more days out. That is the full PATH test set (H1, H3, H4, H5, H13, H21). Gametime adds the final-hours tail (H14). Two caveats remain. The request must win premium-field approval. And whether past daily event snapshots (as opposed to only the latest state) are exportable is still unconfirmed, which is why the request asks for one row per daily snapshot explicitly.
