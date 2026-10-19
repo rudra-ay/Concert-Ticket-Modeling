@@ -18,7 +18,7 @@ Per-show box office spine for the LEVEL question, parsed from English Wikipedia 
 | venue | str | | venue display text |
 | city | str | | city display text |
 | region | str | | US state, Canadian province or Australian state; null outside those countries unless the table has its own column |
-| region_source | str | | `table` (own column), `country_slot` (the table put the state where the country goes), `city_wikilink` (from a `City, State` link target or a known bare city link), or `city_name_map` (the city name maps to exactly one region elsewhere in the data); null = unknown |
+| region_source | str | | `table` (own column), `country_slot` (the table put the state where the country goes), `city_wikilink` (from a `City, State` link target or a known bare city link), or `city_name_map` (the city name maps to exactly one region elsewhere in the data; not used when the city link names another place), or `venue_consensus` (a lone dissenting region at a venue, overridden by the venue's majority; this fixes article link errors like [[Edinburg, Ohio]] for Bert Ogden Arena); null = unknown |
 | country | str | | country as written (states in the country slot are moved to region) |
 | country_iso2 | str | | pycountry lookup plus aliases (England/Scotland/Wales → GB); null = unmapped |
 | tickets_sold | float | tickets | the left side of "sold / available", or a lone number. Null when missing, "—", "sold out" without a count, or a non-first row of an aggregate |
@@ -27,7 +27,7 @@ Per-show box office spine for the LEVEL question, parsed from English Wikipedia 
 | gross_currency | str | ISO 4217 | from the symbol in the cell or the header; a bare `$` is treated as USD (Boxscore convention, see known issues) |
 | gross_usd | float | nominal USD | `gross` when the currency is USD, else null. No FX or CPI conversion |
 | avg_price_usd | float | nominal USD/ticket | `gross_usd / tickets_sold`. **Target variable.** For aggregates it's the average across all the shows in the aggregate |
-| avg_price_flag | str | | `implausible` when the average is < $5 or > $2,000 (the row is kept) |
+| avg_price_flag | str | | `implausible` when the average is < $5 or > $2,000; `tour_outlier` when it is > 4× or < 0.25× the tour median (tours with ≥ 5 priced shows), usually a multi-night or tour total in one row. Rows are kept; screen on this |
 | sellout_ratio | float | ratio | sold / available |
 | aggregate_n_shows | int | shows | >1 when the attendance/revenue cell spans several date rows (multi-night stand reported as one figure) |
 | aggregate_is_first | bool | | True on the row that carries the aggregate figures. Other rows in the group have null figures. **Don't divide by 1 show**: the figures cover `aggregate_n_shows` shows |
@@ -52,7 +52,7 @@ Per-show box office spine for the LEVEL question, parsed from English Wikipedia 
 
 ## Parsing rules
 1. **Candidate pages:** titles in the multistream index that match tour patterns (`… Tour`, `(… tour)`, `Residency`, `List of … concerts/tour dates/live performances`), minus redirects and sports/cycling/golf etc. Any article in a fetched stream is kept if it has a wikitable with an Attendance/Revenue/Gross column **and** either the `{{Infobox concert}}` template (the old `Infobox concert tour` name redirects to it) or a tour-like title.
-2. **Tables:** a table is a shows table if it has a header row with ≥ 3 header cells, a Date column, and an Attendance or Revenue/Gross column. Rowspan and colspan are expanded into a grid. Rows without a parseable date (totals, sub-headers) are skipped. A single-cell row spanning the table is read as a leg/separator (which can also set the year).
+2. **Tables:** a table is a shows table if it has a header row with ≥ 3 header cells, a Date column, and an Attendance or Revenue/Gross column. Rowspan and colspan are expanded into a grid (as in HTML, a full-width leg row uses up one row of any pending rowspan beneath it). Refs are stripped from the whole table first, and lines are joined while a `{{template}}` or `[[link]]` is open, so multi-line citations don't create spurious cells. Rows without a parseable date (totals, sub-headers) are skipped. A single-cell row spanning the table is read as a leg/separator (which can also set the year).
 3. **Cells:** refs, comments and footnote templates (`efn`, `refn`, `cn`…) are removed. `sort`, `dts`, `flag*`, `nowrap`, `US$` and date templates are expanded. Wikilink targets are kept.
 4. **Attendance:** "9,998 / 10,000" → sold, available. A lone number ≥ 50 → sold. "—", "N/A" and "sold out" → null.
 5. **Gross:** the first number, with "million"/"billion" multipliers. Values < 1,000 are discarded (stray footnote numbers).

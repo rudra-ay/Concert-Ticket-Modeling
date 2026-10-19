@@ -178,12 +178,29 @@ def _span(attrs: str, name: str) -> int:
     return max(1, min(int(m.group(1)), 400)) if m else 1
 
 
+def _logical_lines(tw: str) -> list[str]:
+    """Split table text into lines, joining lines while a {{template}} or [[link]] is open
+    (multi-line templates have continuation lines that start with '|')."""
+    out: list[str] = []
+    buf = ""
+    depth = 0
+    for line in tw.split("\n"):
+        buf = f"{buf}\n{line}" if buf else line
+        depth += line.count("{{") - line.count("}}") + line.count("[[") - line.count("]]")
+        if depth <= 0:
+            out.append(buf)
+            buf, depth = "", 0
+    if buf:
+        out.append(buf)
+    return out
+
+
 def parse_table(tw: str) -> tuple[str, list[list[dict]]]:
     """Return (caption, rows); each row is a list of cell dicts (with rowspans expanded)."""
     caption = ""
     raw_rows: list[list[dict]] = []
     cur: list[dict] | None = None
-    lines = tw.split("\n")[1:]
+    lines = _logical_lines(_strip_refs(tw))[1:]
     # join continuation lines (cell content spanning lines) onto previous cell
     for line in lines:
         s = line.strip()
@@ -229,6 +246,13 @@ def parse_table(tw: str) -> tuple[str, list[list[dict]]]:
             c = cells.pop(0)
             for k in range(c["cs"]):
                 out.append(dict(c, spanned=k > 0, origin=r_i))
+                if k > 0 and col in pending:
+                    # a colspan cell (e.g. a full-width leg row) sits over a pending rowspan:
+                    # as in HTML, that row uses up one row of the span
+                    if pending[col][1] <= 1:
+                        del pending[col]
+                    else:
+                        pending[col][1] -= 1
                 if c["rs"] > 1:
                     pending[col] = [c, c["rs"] - 1, r_i]
                 col += 1
@@ -637,9 +661,25 @@ def build() -> pd.DataFrame:
     amb = known.groupby(["country", "city"])["region"].nunique()
     cmap = known.groupby(["country", "city"])["region"].first()[amb == 1]
     gap = df["region"].isna() & df["country"].isin(["United States", "Canada", "Australia"])
+    # ...but never when the city's own link names another place ("San José, Costa Rica")
+    gap &= df["city_wikilink"].map(lambda l: not (isinstance(l, str) and "," in l.split(" | ")[0]))
     fill = [cmap.get((c, ci)) for c, ci in zip(df.loc[gap, "country"], df.loc[gap, "city"])]
     df.loc[gap, "region"] = fill
     df.loc[gap & df["region"].notna(), "region_source"] = "city_name_map"
+    # venue consensus: a lone dissenting region at a venue is an article error (e.g. a show at
+    # Bert Ogden Arena linked to [[Edinburg, Ohio]]); take the venue's majority region
+    vid = df["venue"].map(slug) + "__" + df["city"].map(slug)
+    has = df["region"].notna()
+    counts = df[has].groupby([vid[has], df.loc[has, "region"]]).size()
+    for v, grp in counts.groupby(level=0):
+        if len(grp) < 2:
+            continue
+        top = grp.sort_values(ascending=False)
+        if top.iloc[0] >= 2 and top.iloc[0] > top.iloc[1:].sum():
+            maj = top.index[0][1]
+            bad = (vid == v) & has & (df["region"] != maj)
+            df.loc[bad, "region"] = maj
+            df.loc[bad, "region_source"] = "venue_consensus"
     df["country_iso2"] = df["country"].map(iso2)
     df["gross_usd"] = df["gross"].where(df["gross_currency"] == "USD")
     ok = (df["tickets_sold"] > 0) & df["gross_usd"].notna()
@@ -647,6 +687,13 @@ def build() -> pd.DataFrame:
     # implausible averages are kept but flagged
     df["avg_price_flag"] = None
     df.loc[ok & ((df["avg_price_usd"] < 5) | (df["avg_price_usd"] > 2000)), "avg_price_flag"] = "implausible"
+    # a figure 4x above/below the tour's median average is usually a multi-night or tour total
+    # written into one row, or a typo; flag (keep) when the tour has >= 5 priced shows
+    grp = df.groupby("tour_page_id")["avg_price_usd"]
+    med, npr = grp.transform("median"), grp.transform("count")
+    rel = df["avg_price_usd"] / med
+    out = ok & (npr >= 5) & ((rel > 4) | (rel < 0.25)) & df["avg_price_flag"].isna()
+    df.loc[out, "avg_price_flag"] = "tour_outlier"
     df["sellout_ratio"] = (df["tickets_sold"] / df["tickets_available"]).where(df["tickets_available"] > 0)
     # artist: infobox, else article title minus "Tour"
     fallback = df["tour_title"].str.replace(r"\s*\(.*\)$", "", regex=True)

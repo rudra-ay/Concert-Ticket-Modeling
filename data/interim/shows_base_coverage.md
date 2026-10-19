@@ -1,98 +1,140 @@
 # shows_base coverage
 
-Generated from 196 cached tour pages (123 yielded show rows).
+Generated from 1920 cached tour pages (1092 yielded show rows).
 
-- show rows: 6391
-- rows with avg price (USD gross and tickets sold): 1246
-- artists (priced): 45; tours (priced): 54
-- venues (priced): 600; countries (priced): 49
-- rows with gross in a non-USD currency: 3
-- rows flagged implausible avg price: 0
-- rows that are part of a multi-show aggregate figure: 3480
+- show rows: 65968
+- rows with avg price (USD gross and tickets sold): 22668
+- artists (priced): 311; tours (priced): 759
+- venues (priced): 4284; countries (priced): 85
+- rows with gross in a non-USD currency: 32
+- rows flagged implausible avg price: 13
+- rows that are part of a multi-show aggregate figure: 29853
 
 ## By year (priced)
 
 | value | priced shows |
 |---|---|
-| 1987 | 6 |
-| 1988 | 21 |
-| 2017 | 24 |
-| 2018 | 38 |
-| 2019 | 34 |
-| 2020 | 1 |
-| 2022 | 102 |
-| 2023 | 141 |
-| 2024 | 577 |
-| 2025 | 293 |
-| 2026 | 9 |
+| 1971 | 1 |
+| 1975 | 18 |
+| 1976 | 89 |
+| 1977 | 77 |
+| 1978 | 131 |
+| 1979 | 137 |
+| 1980 | 103 |
+| 1981 | 143 |
+| 1982 | 146 |
+| 1983 | 41 |
+| 1984 | 143 |
+| 1985 | 123 |
+| 1986 | 204 |
+| 1987 | 284 |
+| 1988 | 233 |
+| 1989 | 202 |
+| 1990 | 235 |
+| 1991 | 113 |
+| 1992 | 192 |
+| 1993 | 75 |
+| 1994 | 159 |
+| 1995 | 81 |
+| 1996 | 110 |
+| 1997 | 212 |
+| 1998 | 163 |
+| 1999 | 195 |
+| 2000 | 137 |
+| 2001 | 178 |
+| 2002 | 187 |
+| 2003 | 220 |
+| 2004 | 272 |
+| 2005 | 297 |
+| 2006 | 335 |
+| 2007 | 279 |
+| 2008 | 580 |
+| 2009 | 750 |
+| 2010 | 676 |
+| 2011 | 572 |
+| 2012 | 689 |
+| 2013 | 1065 |
+| 2014 | 975 |
+| 2015 | 1351 |
+| 2016 | 1421 |
+| 2017 | 2151 |
+| 2018 | 1595 |
+| 2019 | 1373 |
+| 2020 | 139 |
+| 2021 | 149 |
+| 2022 | 1186 |
+| 2023 | 813 |
+| 2024 | 959 |
+| 2025 | 582 |
+| 2026 | 127 |
 
 ## By country, top 25 (priced)
 
 | value | priced shows |
 |---|---|
-| US | 740 |
-| GB | 78 |
-| CA | 63 |
-| AU | 48 |
-| DE | 42 |
-| MX | 31 |
-| BR | 18 |
-| FR | 17 |
-| IE | 16 |
-| JP | 16 |
-| NL | 13 |
-| KR | 10 |
-| ES | 10 |
-| CL | 9 |
-| CO | 9 |
-| PL | 8 |
-| NZ | 8 |
-| TW | 7 |
-| DK | 7 |
-| IT | 7 |
-| BE | 7 |
-| AR | 7 |
-| SE | 6 |
-| CH | 6 |
-| SG | 6 |
+| US | 14166 |
+| CA | 1415 |
+| GB | 1084 |
+| unknown | 842 |
+| DE | 698 |
+| AU | 643 |
+| MX | 367 |
+| ES | 278 |
+| BR | 269 |
+| FR | 252 |
+| IE | 179 |
+| NL | 174 |
+| IT | 169 |
+| BE | 158 |
+| CH | 133 |
+| SE | 132 |
+| JP | 132 |
+| DK | 118 |
+| NZ | 114 |
+| NO | 96 |
+| AR | 94 |
+| CL | 86 |
+| AT | 83 |
+| PL | 75 |
+| PT | 64 |
 
 ## By capacity bucket (priced; available, else sold)
 
 | value | priced shows |
 |---|---|
-| <3k club/theater | 96 |
-| 3k-8k theater/amph. | 96 |
-| 8k-25k arena | 634 |
-| 25k+ stadium | 420 |
+| <3k club/theater | 623 |
+| 3k-8k theater/amph. | 2369 |
+| 8k-25k arena | 13500 |
+| 25k+ stadium | 6175 |
 
 ## Top 25 artists by priced shows
 
 | value | priced shows |
 |---|---|
-| AJR | 88 |
-| Red Hot Chili Peppers | 78 |
-| Justin Timberlake | 75 |
-| Karol G | 70 |
-| Nicki Minaj | 67 |
-| Olivia Rodrigo | 66 |
-| Travis Scott | 62 |
-| Tyler, the Creator | 60 |
-| Twenty One Pilots | 49 |
-| Louis Tomlinson | 48 |
-| Billie Eilish | 46 |
-| Avril Lavigne | 43 |
-| Shakira | 38 |
-| Aurora | 35 |
-| Bad Bunny | 31 |
-| Linkin Park | 29 |
-| Sabrina Carpenter | 28 |
-| Katy Perry | 27 |
-| Melanie Martinez | 27 |
-| Rush | 27 |
-| Robbie Williams | 25 |
-| Kylie Minogue | 21 |
-| Rod Wave | 21 |
-| Tate McRae | 21 |
-| Seventeen | 20 |
+| Bruce Springsteen and the E Street Band | 629 |
+| Bon Jovi | 551 |
+| U2 | 489 |
+| Luis Miguel | 455 |
+| Rush | 418 |
+| Ed Sheeran | 400 |
+| Madonna | 359 |
+| The Rolling Stones | 336 |
+| Coldplay | 331 |
+| AC/DC | 308 |
+| Taylor Swift | 298 |
+| Justin Bieber | 295 |
+| Depeche Mode | 282 |
+| Metallica | 277 |
+| American Idol | 271 |
+| Justin Timberlake | 266 |
+| Beyoncé | 258 |
+| Bob Dylan | 253 |
+| Elton John | 248 |
+| Pink | 248 |
+| Celine Dion | 247 |
+| Shania Twain | 247 |
+| Katy Perry | 245 |
+| Paul McCartney | 242 |
+| Fleetwood Mac | 238 |
 
 Genre is not in the tour articles; collector-features joins it from Wikidata/MusicBrainz.
