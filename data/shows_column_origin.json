@@ -1,0 +1,1110 @@
+{
+ "show_id": [
+  "shows_base",
+  "show_id"
+ ],
+ "artist_id": [
+  "shows_base",
+  "artist_id"
+ ],
+ "venue_id": [
+  "shows_base",
+  "venue_id"
+ ],
+ "show_date": [
+  "shows_base",
+  "show_date"
+ ],
+ "artist_name": [
+  "shows_base",
+  "artist_name"
+ ],
+ "venue": [
+  "shows_base",
+  "venue"
+ ],
+ "city": [
+  "shows_base",
+  "city"
+ ],
+ "region": [
+  "shows_base",
+  "region"
+ ],
+ "region_source": [
+  "shows_base",
+  "region_source"
+ ],
+ "country": [
+  "shows_base",
+  "country"
+ ],
+ "country_iso2": [
+  "shows_base",
+  "country_iso2"
+ ],
+ "tickets_sold": [
+  "shows_base",
+  "tickets_sold"
+ ],
+ "tickets_available": [
+  "shows_base",
+  "tickets_available"
+ ],
+ "gross": [
+  "shows_base",
+  "gross"
+ ],
+ "gross_currency": [
+  "shows_base",
+  "gross_currency"
+ ],
+ "gross_usd": [
+  "shows_base",
+  "gross_usd"
+ ],
+ "avg_price_usd": [
+  "shows_base",
+  "avg_price_usd"
+ ],
+ "sellout_ratio": [
+  "shows_base",
+  "sellout_ratio"
+ ],
+ "aggregate_n_shows": [
+  "shows_base",
+  "aggregate_n_shows"
+ ],
+ "aggregate_is_first": [
+  "shows_base",
+  "aggregate_is_first"
+ ],
+ "status_note": [
+  "shows_base",
+  "status_note"
+ ],
+ "tour_title": [
+  "shows_base",
+  "tour_title"
+ ],
+ "leg": [
+  "shows_base",
+  "leg"
+ ],
+ "tour_page_id": [
+  "shows_base",
+  "tour_page_id"
+ ],
+ "tour_revid": [
+  "shows_base",
+  "tour_revid"
+ ],
+ "rev_timestamp": [
+  "shows_base",
+  "rev_timestamp"
+ ],
+ "table_index": [
+  "shows_base",
+  "table_index"
+ ],
+ "table_caption": [
+  "shows_base",
+  "table_caption"
+ ],
+ "section": [
+  "shows_base",
+  "section"
+ ],
+ "date_raw": [
+  "shows_base",
+  "date_raw"
+ ],
+ "city_wikilink": [
+  "shows_base",
+  "city_wikilink"
+ ],
+ "venue_wikilink": [
+  "shows_base",
+  "venue_wikilink"
+ ],
+ "opening_acts_raw": [
+  "shows_base",
+  "opening_acts_raw"
+ ],
+ "opening_acts_wikilinks": [
+  "shows_base",
+  "opening_acts_wikilinks"
+ ],
+ "attendance_raw": [
+  "shows_base",
+  "attendance_raw"
+ ],
+ "revenue_raw": [
+  "shows_base",
+  "revenue_raw"
+ ],
+ "notes_raw": [
+  "shows_base",
+  "notes_raw"
+ ],
+ "artist_wikilink": [
+  "shows_base",
+  "artist_wikilink"
+ ],
+ "tour_start_date": [
+  "shows_base",
+  "tour_start_date"
+ ],
+ "tour_end_date": [
+  "shows_base",
+  "tour_end_date"
+ ],
+ "tour_infobox_number_of_legs": [
+  "shows_base",
+  "tour_infobox_number_of_legs"
+ ],
+ "tour_infobox_number_of_shows": [
+  "shows_base",
+  "tour_infobox_number_of_shows"
+ ],
+ "tour_infobox_album": [
+  "shows_base",
+  "tour_infobox_album"
+ ],
+ "tour_infobox_gross": [
+  "shows_base",
+  "tour_infobox_gross"
+ ],
+ "tour_infobox_type": [
+  "shows_base",
+  "tour_infobox_type"
+ ],
+ "tour_infobox_attendance": [
+  "shows_base",
+  "tour_infobox_attendance"
+ ],
+ "avg_price_flag": [
+  "shows_base",
+  "avg_price_flag"
+ ],
+ "capacity_bucket": [
+  "shows_base",
+  "capacity_bucket"
+ ],
+ "source": [
+  "shows_base",
+  "source"
+ ],
+ "agg_group_id": [
+  "derived",
+  "agg_group_id"
+ ],
+ "agg_n_venues": [
+  "derived",
+  "agg_n_venues"
+ ],
+ "agg_span_days": [
+  "derived",
+  "agg_span_days"
+ ],
+ "agg_last_date": [
+  "derived",
+  "agg_last_date"
+ ],
+ "is_aggregate_unit": [
+  "derived",
+  "is_aggregate_unit"
+ ],
+ "tickets_sold_per_show": [
+  "derived",
+  "tickets_sold_per_show"
+ ],
+ "tickets_available_per_show": [
+  "derived",
+  "tickets_available_per_show"
+ ],
+ "gross_usd_per_show": [
+  "derived",
+  "gross_usd_per_show"
+ ],
+ "dup_boxoffice_group": [
+  "derived",
+  "dup_boxoffice_group"
+ ],
+ "dup_boxoffice_drop": [
+  "derived",
+  "dup_boxoffice_drop"
+ ],
+ "dup_boxoffice_resolved": [
+  "derived",
+  "dup_boxoffice_resolved"
+ ],
+ "is_cancelled_spine": [
+  "derived",
+  "is_cancelled_spine"
+ ],
+ "usd_assumed_non_us": [
+  "derived",
+  "usd_assumed_non_us"
+ ],
+ "cpi_base_month": [
+  "derived",
+  "cpi_base_month"
+ ],
+ "cpi_show_month": [
+  "derived",
+  "cpi_show_month"
+ ],
+ "cpi_month_imputed": [
+  "derived",
+  "cpi_month_imputed"
+ ],
+ "avg_price_real": [
+  "derived",
+  "avg_price_real"
+ ],
+ "gross_usd_real": [
+  "derived",
+  "gross_usd_real"
+ ],
+ "gross_usd_real_per_show": [
+  "derived",
+  "gross_usd_real_per_show"
+ ],
+ "log_avg_price_real": [
+  "derived",
+  "log_avg_price_real"
+ ],
+ "log_avg_price_nominal": [
+  "derived",
+  "log_avg_price_nominal"
+ ],
+ "n_shows_in_spine": [
+  "artist",
+  "n_shows_in_spine"
+ ],
+ "n_headliners": [
+  "artist",
+  "n_headliners"
+ ],
+ "artist_link_source": [
+  "artist",
+  "artist_link_source"
+ ],
+ "artist_enwiki_title": [
+  "artist",
+  "artist_enwiki_title"
+ ],
+ "artist_qid": [
+  "artist",
+  "artist_qid"
+ ],
+ "mbid": [
+  "artist",
+  "mbid"
+ ],
+ "mbid_source": [
+  "artist",
+  "mbid_source"
+ ],
+ "artist_type": [
+  "artist",
+  "artist_type"
+ ],
+ "artist_type_source": [
+  "artist",
+  "artist_type_source"
+ ],
+ "artist_country_iso2": [
+  "artist",
+  "country_iso2"
+ ],
+ "country_source": [
+  "artist",
+  "country_source"
+ ],
+ "genres_wikidata": [
+  "artist",
+  "genres_wikidata"
+ ],
+ "genre_coarse": [
+  "artist",
+  "genre_coarse"
+ ],
+ "career_start_year": [
+  "artist",
+  "career_start_year"
+ ],
+ "career_start_source": [
+  "artist",
+  "career_start_source"
+ ],
+ "tour_category": [
+  "artist",
+  "tour_category"
+ ],
+ "n_tour_articles": [
+  "artist",
+  "n_tour_articles"
+ ],
+ "mb_genre_tags": [
+  "artist",
+  "mb_genre_tags"
+ ],
+ "mb_genre_coarse": [
+  "artist",
+  "mb_genre_coarse"
+ ],
+ "genre_coarse_final": [
+  "artist",
+  "genre_coarse_final"
+ ],
+ "genre_coarse_source": [
+  "artist",
+  "genre_coarse_source"
+ ],
+ "lb_total_listen_count": [
+  "artist",
+  "lb_total_listen_count"
+ ],
+ "lb_total_user_count": [
+  "artist",
+  "lb_total_user_count"
+ ],
+ "lb_snapshot_date": [
+  "artist",
+  "lb_snapshot_date"
+ ],
+ "has_artist": [
+  "derived",
+  "has_artist"
+ ],
+ "years_active_at_show": [
+  "artist_show",
+  "years_active_at_show"
+ ],
+ "n_tours_started_before_show_year": [
+  "artist_show",
+  "n_tours_started_before_show_year"
+ ],
+ "n_tours_started_by_show_year": [
+  "artist_show",
+  "n_tours_started_by_show_year"
+ ],
+ "pv_mean_90d": [
+  "artist_show",
+  "pv_mean_90d"
+ ],
+ "pv_mean_365d": [
+  "artist_show",
+  "pv_mean_365d"
+ ],
+ "pv_momentum": [
+  "artist_show",
+  "pv_momentum"
+ ],
+ "pv_spike_ratio": [
+  "artist_show",
+  "pv_spike_ratio"
+ ],
+ "pv_spike_flag": [
+  "artist_show",
+  "pv_spike_flag"
+ ],
+ "has_artist_show": [
+  "derived",
+  "has_artist_show"
+ ],
+ "venue_venue_wikilink": [
+  "venue",
+  "venue_wikilink"
+ ],
+ "n_shows": [
+  "venue",
+  "n_shows"
+ ],
+ "n_priced_shows": [
+  "venue",
+  "n_priced_shows"
+ ],
+ "venue_enwiki_title": [
+  "venue",
+  "venue_enwiki_title"
+ ],
+ "venue_link_source": [
+  "venue",
+  "venue_link_source"
+ ],
+ "venue_qid": [
+  "venue",
+  "venue_qid"
+ ],
+ "venue_label": [
+  "venue",
+  "venue_label"
+ ],
+ "p31_classes": [
+  "venue",
+  "p31_classes"
+ ],
+ "venue_type": [
+  "venue",
+  "venue_type"
+ ],
+ "indoor_outdoor": [
+  "venue",
+  "indoor_outdoor"
+ ],
+ "type_matched_label": [
+  "venue",
+  "type_matched_label"
+ ],
+ "lat": [
+  "venue",
+  "lat"
+ ],
+ "lon": [
+  "venue",
+  "lon"
+ ],
+ "coord_source": [
+  "venue",
+  "coord_source"
+ ],
+ "wd_city": [
+  "venue",
+  "wd_city"
+ ],
+ "wd_locality_qid": [
+  "venue",
+  "wd_locality_qid"
+ ],
+ "wd_locality": [
+  "venue",
+  "wd_locality"
+ ],
+ "km_to_locality": [
+  "venue",
+  "km_to_locality"
+ ],
+ "venue_country_iso2": [
+  "venue",
+  "country_iso2"
+ ],
+ "us_state": [
+  "venue",
+  "us_state"
+ ],
+ "opening_year": [
+  "venue",
+  "opening_year"
+ ],
+ "capacity": [
+  "venue",
+  "capacity"
+ ],
+ "capacity_config": [
+  "venue",
+  "capacity_config"
+ ],
+ "capacity_max": [
+  "venue",
+  "capacity_max"
+ ],
+ "capacity_n_configs": [
+  "venue",
+  "capacity_n_configs"
+ ],
+ "capacity_all": [
+  "venue",
+  "capacity_all"
+ ],
+ "qid_n_spine_cities": [
+  "venue",
+  "qid_n_spine_cities"
+ ],
+ "link_ambiguous": [
+  "venue",
+  "link_ambiguous"
+ ],
+ "has_venue": [
+  "derived",
+  "has_venue"
+ ],
+ "is_us": [
+  "metro",
+  "is_us"
+ ],
+ "metro_scope": [
+  "metro",
+  "metro_scope"
+ ],
+ "cbsa_code": [
+  "metro",
+  "cbsa_code"
+ ],
+ "cbsa_title": [
+  "metro",
+  "cbsa_title"
+ ],
+ "cbsa_type": [
+  "metro",
+  "cbsa_type"
+ ],
+ "csa_code": [
+  "metro",
+  "csa_code"
+ ],
+ "csa_title": [
+  "metro",
+  "csa_title"
+ ],
+ "metro_median_hh_income": [
+  "metro",
+  "metro_median_hh_income"
+ ],
+ "metro_median_hh_income_moe": [
+  "metro",
+  "metro_median_hh_income_moe"
+ ],
+ "metro_population": [
+  "metro",
+  "metro_population"
+ ],
+ "metro_log_population": [
+  "metro",
+  "metro_log_population"
+ ],
+ "metro_college_share": [
+  "metro",
+  "metro_college_share"
+ ],
+ "is_college_town": [
+  "metro",
+  "is_college_town"
+ ],
+ "county_fips": [
+  "metro",
+  "county_fips"
+ ],
+ "county_median_hh_income": [
+  "metro",
+  "county_median_hh_income"
+ ],
+ "county_population": [
+  "metro",
+  "county_population"
+ ],
+ "county_college_share": [
+  "metro",
+  "county_college_share"
+ ],
+ "place_geoid": [
+  "metro",
+  "place_geoid"
+ ],
+ "place_median_hh_income": [
+  "metro",
+  "place_median_hh_income"
+ ],
+ "place_population": [
+  "metro",
+  "place_population"
+ ],
+ "match_method": [
+  "metro",
+  "match_method"
+ ],
+ "match_confidence": [
+  "metro",
+  "match_confidence"
+ ],
+ "match_note": [
+  "metro",
+  "match_note"
+ ],
+ "coord_conflict_km": [
+  "metro",
+  "coord_conflict_km"
+ ],
+ "acs_vintage": [
+  "metro",
+  "acs_vintage"
+ ],
+ "has_metro": [
+  "derived",
+  "has_metro"
+ ],
+ "state_usps": [
+  "venue_metro",
+  "state_usps"
+ ],
+ "has_venue_metro": [
+  "derived",
+  "has_venue_metro"
+ ],
+ "year": [
+  "calendar",
+  "year"
+ ],
+ "month": [
+  "calendar",
+  "month"
+ ],
+ "quarter": [
+  "calendar",
+  "quarter"
+ ],
+ "day_of_week": [
+  "calendar",
+  "day_of_week"
+ ],
+ "day_name": [
+  "calendar",
+  "day_name"
+ ],
+ "day_type": [
+  "calendar",
+  "day_type"
+ ],
+ "is_fri_sat": [
+  "calendar",
+  "is_fri_sat"
+ ],
+ "is_sunday": [
+  "calendar",
+  "is_sunday"
+ ],
+ "season_nh": [
+  "calendar",
+  "season_nh"
+ ],
+ "season_local": [
+  "calendar",
+  "season_local"
+ ],
+ "is_dec_holiday_period": [
+  "calendar",
+  "is_dec_holiday_period"
+ ],
+ "holiday_calendar_available": [
+  "calendar",
+  "holiday_calendar_available"
+ ],
+ "is_public_holiday": [
+  "calendar",
+  "is_public_holiday"
+ ],
+ "public_holiday_name": [
+  "calendar",
+  "public_holiday_name"
+ ],
+ "is_holiday_eve": [
+  "calendar",
+  "is_holiday_eve"
+ ],
+ "is_holiday_adjacent": [
+  "calendar",
+  "is_holiday_adjacent"
+ ],
+ "is_long_weekend": [
+  "calendar",
+  "is_long_weekend"
+ ],
+ "long_weekend_holiday": [
+  "calendar",
+  "long_weekend_holiday"
+ ],
+ "us_holiday_weekend": [
+  "calendar",
+  "us_holiday_weekend"
+ ],
+ "is_us_holiday_weekend": [
+  "calendar",
+  "is_us_holiday_weekend"
+ ],
+ "is_us_summer_break_proxy": [
+  "calendar",
+  "is_us_summer_break_proxy"
+ ],
+ "cal_is_us": [
+  "calendar",
+  "is_us"
+ ],
+ "has_calendar": [
+  "derived",
+  "has_calendar"
+ ],
+ "is_cancelled": [
+  "tour_context",
+  "is_cancelled"
+ ],
+ "tour_key": [
+  "tour_context",
+  "tour_key"
+ ],
+ "tour_inferred": [
+  "tour_context",
+  "tour_inferred"
+ ],
+ "leg_number": [
+  "tour_context",
+  "leg_number"
+ ],
+ "leg_inferred": [
+  "tour_context",
+  "leg_inferred"
+ ],
+ "continent": [
+  "tour_context",
+  "continent"
+ ],
+ "tour_n_shows": [
+  "tour_context",
+  "tour_n_shows"
+ ],
+ "tour_show_number": [
+  "tour_context",
+  "tour_show_number"
+ ],
+ "tour_span_days": [
+  "tour_context",
+  "tour_span_days"
+ ],
+ "tour_n_legs": [
+  "tour_context",
+  "tour_n_legs"
+ ],
+ "tour_n_countries": [
+  "tour_context",
+  "tour_n_countries"
+ ],
+ "days_since_tour_start": [
+  "tour_context",
+  "days_since_tour_start"
+ ],
+ "tour_progress": [
+  "tour_context",
+  "tour_progress"
+ ],
+ "is_first_show_of_tour": [
+  "tour_context",
+  "is_first_show_of_tour"
+ ],
+ "is_last_show_of_tour": [
+  "tour_context",
+  "is_last_show_of_tour"
+ ],
+ "leg_n_shows": [
+  "tour_context",
+  "leg_n_shows"
+ ],
+ "leg_show_number": [
+  "tour_context",
+  "leg_show_number"
+ ],
+ "leg_span_days": [
+  "tour_context",
+  "leg_span_days"
+ ],
+ "is_first_show_of_leg": [
+  "tour_context",
+  "is_first_show_of_leg"
+ ],
+ "is_last_show_of_leg": [
+  "tour_context",
+  "is_last_show_of_leg"
+ ],
+ "days_since_prev_show_artist": [
+  "tour_context",
+  "days_since_prev_show_artist"
+ ],
+ "days_to_next_show_artist": [
+  "tour_context",
+  "days_to_next_show_artist"
+ ],
+ "metro_key": [
+  "tour_context",
+  "metro_key"
+ ],
+ "metro_key_source": [
+  "tour_context",
+  "metro_key_source"
+ ],
+ "metro_n_dates_tour": [
+  "tour_context",
+  "metro_n_dates_tour"
+ ],
+ "metro_date_rank": [
+  "tour_context",
+  "metro_date_rank"
+ ],
+ "venue_n_dates_tour": [
+  "tour_context",
+  "venue_n_dates_tour"
+ ],
+ "venue_date_rank": [
+  "tour_context",
+  "venue_date_rank"
+ ],
+ "venue_run_length": [
+  "tour_context",
+  "venue_run_length"
+ ],
+ "venue_run_position": [
+  "tour_context",
+  "venue_run_position"
+ ],
+ "is_multi_night_run": [
+  "tour_context",
+  "is_multi_night_run"
+ ],
+ "is_added_date_proxy": [
+  "tour_context",
+  "is_added_date_proxy"
+ ],
+ "days_announce_to_show": [
+  "tour_context",
+  "days_announce_to_show"
+ ],
+ "has_tour_context": [
+  "derived",
+  "has_tour_context"
+ ],
+ "bill_n_headliners": [
+  "bill",
+  "n_headliners"
+ ],
+ "co_headliner_flag": [
+  "bill",
+  "co_headliner_flag"
+ ],
+ "n_openers": [
+  "bill",
+  "n_openers"
+ ],
+ "openers_source": [
+  "bill",
+  "openers_source"
+ ],
+ "n_acts_on_bill": [
+  "bill",
+  "n_acts_on_bill"
+ ],
+ "multi_artist_flag": [
+  "bill",
+  "multi_artist_flag"
+ ],
+ "opener_names": [
+  "bill",
+  "opener_names"
+ ],
+ "n_openers_linked": [
+  "bill",
+  "n_openers_linked"
+ ],
+ "n_openers_name_matched": [
+  "bill",
+  "n_openers_name_matched"
+ ],
+ "n_openers_with_pv": [
+  "bill",
+  "n_openers_with_pv"
+ ],
+ "opener_pv_mean_90d_max": [
+  "bill",
+  "opener_pv_mean_90d_max"
+ ],
+ "opener_pv_mean_90d_sum": [
+  "bill",
+  "opener_pv_mean_90d_sum"
+ ],
+ "tour_album_title": [
+  "bill",
+  "tour_album_title"
+ ],
+ "album_pv_mean_90d": [
+  "bill",
+  "album_pv_mean_90d"
+ ],
+ "album_pv_momentum": [
+  "bill",
+  "album_pv_momentum"
+ ],
+ "opener_pv_status": [
+  "bill",
+  "opener_pv_status"
+ ],
+ "wikidata_status": [
+  "bill",
+  "wikidata_status"
+ ],
+ "festival_flag": [
+  "bill",
+  "festival_flag"
+ ],
+ "festival_reason": [
+  "bill",
+  "festival_reason"
+ ],
+ "farewell_flag": [
+  "bill",
+  "farewell_flag"
+ ],
+ "farewell_match": [
+  "bill",
+  "farewell_match"
+ ],
+ "reunion_flag": [
+  "bill",
+  "reunion_flag"
+ ],
+ "reunion_match": [
+  "bill",
+  "reunion_match"
+ ],
+ "has_bill": [
+  "derived",
+  "has_bill"
+ ],
+ "wx_priced_show": [
+  "weather",
+  "wx_priced_show"
+ ],
+ "wx_coord_source": [
+  "weather",
+  "wx_coord_source"
+ ],
+ "wx_query_lat": [
+  "weather",
+  "wx_query_lat"
+ ],
+ "wx_query_lon": [
+  "weather",
+  "wx_query_lon"
+ ],
+ "wx_status": [
+  "weather",
+  "wx_status"
+ ],
+ "wx_coord_reuse_km": [
+  "weather",
+  "wx_coord_reuse_km"
+ ],
+ "wx_grid_lat": [
+  "weather",
+  "wx_grid_lat"
+ ],
+ "wx_grid_lon": [
+  "weather",
+  "wx_grid_lon"
+ ],
+ "wx_timezone": [
+  "weather",
+  "wx_timezone"
+ ],
+ "wx_elevation_m": [
+  "weather",
+  "wx_elevation_m"
+ ],
+ "wx_temp_max_c": [
+  "weather",
+  "wx_temp_max_c"
+ ],
+ "wx_temp_min_c": [
+  "weather",
+  "wx_temp_min_c"
+ ],
+ "wx_precip_mm": [
+  "weather",
+  "wx_precip_mm"
+ ],
+ "wx_precip_hours": [
+  "weather",
+  "wx_precip_hours"
+ ],
+ "wx_wind_max_kmh": [
+  "weather",
+  "wx_wind_max_kmh"
+ ],
+ "wx_weather_code": [
+  "weather",
+  "wx_weather_code"
+ ],
+ "wx_snow_day": [
+  "weather",
+  "wx_snow_day"
+ ],
+ "wx_eve_temp_mean_c": [
+  "weather",
+  "wx_eve_temp_mean_c"
+ ],
+ "wx_eve_precip_mm": [
+  "weather",
+  "wx_eve_precip_mm"
+ ],
+ "wx_eve_precip_hours": [
+  "weather",
+  "wx_eve_precip_hours"
+ ],
+ "wx_eve_wind_max_kmh": [
+  "weather",
+  "wx_eve_wind_max_kmh"
+ ],
+ "wx_eve_weather_code_max": [
+  "weather",
+  "wx_eve_weather_code_max"
+ ],
+ "wx_eve_thunderstorm": [
+  "weather",
+  "wx_eve_thunderstorm"
+ ],
+ "wx_eve_hours_covered": [
+  "weather",
+  "wx_eve_hours_covered"
+ ],
+ "wx_known_at_purchase": [
+  "weather",
+  "wx_known_at_purchase"
+ ],
+ "has_weather": [
+  "derived",
+  "has_weather"
+ ],
+ "analysis_exclusion_reason": [
+  "derived",
+  "analysis_exclusion_reason"
+ ],
+ "analysis_sample": [
+  "derived",
+  "analysis_sample"
+ ],
+ "split_key": [
+  "derived",
+  "split_key"
+ ],
+ "artist_key": [
+  "derived",
+  "artist_key"
+ ],
+ "artist_split": [
+  "derived",
+  "artist_split"
+ ],
+ "artist_median_log_price_real": [
+  "derived",
+  "artist_median_log_price_real"
+ ],
+ "artist_n_analysis": [
+  "derived",
+  "artist_n_analysis"
+ ],
+ "price_rel_artist_median": [
+  "derived",
+  "price_rel_artist_median"
+ ],
+ "unit_n_shows": [
+  "derived",
+  "unit_n_shows"
+ ]
+}

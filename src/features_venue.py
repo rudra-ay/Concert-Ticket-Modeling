@@ -8,6 +8,7 @@ labels (one level of P279 superclasses when a direct class is unmapped).
 from __future__ import annotations
 
 import math
+import os
 import re
 
 import pandas as pd
@@ -211,6 +212,8 @@ def build() -> pd.DataFrame:
         if i == n_priced_venues - 1:  # every venue of a priced show is done
             _write(venues, rows)
             print(f"PRICED_MILESTONE {n_priced_venues} venues", flush=True)
+            if os.environ.get("FEATURES_VENUE_STOP_AT_MILESTONE") == "1":
+                return _write(venues, rows)  # remainder runs later, after bill's Wikidata steps
     print(f"done; transient network skips this run: {transient_skips()} (rerun from cache to fill)", flush=True)
     return _write(venues, rows)
 

@@ -411,10 +411,33 @@ CREATE TABLE IF NOT EXISTS discover_candidates (
     attraction_ids TEXT,
     has_price_ranges INTEGER
 );
+CREATE TABLE IF NOT EXISTS promotions (
+    event_id        TEXT PRIMARY KEY,
+    promoted_on     TEXT NOT NULL,           -- UTC date added to the watchlist (= path start)
+    first_seen_on   TEXT,                    -- first discover scan that saw it (without ranges)
+    ranges_seen_on  TEXT,                    -- first scan that saw priceRanges
+    days_out_at_promotion INTEGER
+);
 CREATE VIEW IF NOT EXISTS missing_price_ranges AS
     SELECT event_id, snap_date, name, event_status, days_until_show
     FROM snapshots WHERE http_status = 200 AND has_price_ranges = 0;
 """
+
+
+# Columns added after the first deployment; connect() adds them to older databases.
+MIGRATIONS = {
+    "watchlist": {
+        "selected_for_ranges": "INTEGER",    # 1 = ranges pool (incl. promotions), 0 = random no-ranges draw, NULL = manual/pilot
+        "stratum": "TEXT",                   # far|near + '|' + state + '|' + genre at selection
+        "selection_prob": "REAL",            # selected / available in (stratum, ranges pool) that day
+        "has_ranges_at_selection": "INTEGER",
+    },
+    "discover_candidates": {
+        "first_seen_on": "TEXT",
+        "first_has_ranges": "INTEGER",
+        "ranges_seen_on": "TEXT",            # first scan date with priceRanges
+    },
+}
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -422,6 +445,12 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    for table, cols in MIGRATIONS.items():
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col, typ in cols.items():
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    conn.commit()
     return conn
 
 
@@ -682,6 +711,19 @@ def _candidate_from_search(ev: dict, today: date) -> dict[str, Any]:
             "attraction_ids": row["attraction_ids"], "has_price_ranges": int(bool(ranges))}
 
 
+def _upsert_candidate(conn: sqlite3.Connection, c: dict[str, Any]) -> None:
+    """Latest scan wins for every field except the first-seen ones, which make promotions auditable."""
+    c = {**c, "first_seen_on": c["seen_on"], "first_has_ranges": c["has_price_ranges"],
+         "ranges_seen_on": c["seen_on"] if c["has_price_ranges"] else None}
+    keep = {"event_id", "first_seen_on", "first_has_ranges", "ranges_seen_on"}
+    updates = ", ".join(f"{k}=excluded.{k}" for k in c if k not in keep)
+    conn.execute(
+        f"INSERT INTO discover_candidates({','.join(c)}) VALUES ({','.join('?' * len(c))}) "
+        f"ON CONFLICT(event_id) DO UPDATE SET {updates}, "
+        "ranges_seen_on = COALESCE(discover_candidates.ranges_seen_on, excluded.ranges_seen_on)",
+        list(c.values()))
+
+
 def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, days_min: int, days_max: int,
                      max_calls: int, max_pages_per_day: int = 5, page_size: int = 200,
                      country: str = "US") -> int:
@@ -715,9 +757,7 @@ def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, d
             for ev in events:
                 if not ev.get("id"):
                     continue
-                c = _candidate_from_search(ev, today)
-                conn.execute(f"INSERT OR REPLACE INTO discover_candidates({','.join(c)}) "
-                             f"VALUES ({','.join('?' * len(c))})", list(c.values()))
+                _upsert_candidate(conn, _candidate_from_search(ev, today))
             pages += 1
             page += 1
             if not events or page >= int(info.get("totalPages") or 0):
@@ -802,6 +842,78 @@ def select_diverse(cands: list[dict[str, Any]], slots: int, today: date, far_sha
     return chosen
 
 
+RANGES_SHARE = 0.8
+
+
+def _stratum(c: dict[str, Any], today: date) -> str:
+    band = "far" if (date.fromisoformat(c["local_date"]) - today).days >= 60 else "near"
+    return f"{band}|{c.get('state') or '?'}|{c.get('genre') or '?'}"
+
+
+def _proportional_random(pool: list[dict[str, Any]], n: int, today: date, rng: random.Random) -> list[str]:
+    """Simple random draw of n within each stratum, n allocated proportionally (largest remainder)."""
+    strata: dict[str, list[dict]] = {}
+    for c in pool:
+        strata.setdefault(_stratum(c, today), []).append(c)
+    n = min(n, len(pool))
+    if n <= 0:
+        return []
+    quotas = {k: n * len(v) / len(pool) for k, v in sorted(strata.items())}
+    alloc = {k: int(q) for k, q in quotas.items()}
+    for k in sorted(quotas, key=lambda k: (alloc[k] - quotas[k], k))[: n - sum(alloc.values())]:
+        alloc[k] += 1
+    out: list[str] = []
+    for k in sorted(strata):
+        members = sorted(strata[k], key=lambda c: c["event_id"])
+        out += [c["event_id"] for c in rng.sample(members, alloc[k])]
+    return out
+
+
+def select_panel(cands: list[dict[str, Any]], slots: int, today: date, far_share: float,
+                 ranges_share: float = RANGES_SHARE, seed: str = "",
+                 existing: Iterable[tuple[str | None, str | None]] = ()) -> list[dict[str, Any]]:
+    """Option (b) from the 2026-10-19 pilot: tilt the panel toward events that publish priceRanges.
+
+    In each band (far = show >= 60 days out, near) `ranges_share` of the slots go to events with
+    priceRanges, picked for diversity by select_diverse; the rest are a simple random draw, within
+    (band, state, genre) strata, of events without ranges. Each pick carries its stratum and the
+    realized selection probability (selected / available in its stratum and pool) for IPW.
+    """
+    rng = random.Random(f"panel-{seed}")
+    existing = list(existing)
+    far = [c for c in cands if _stratum(c, today).startswith("far|")]
+    near = [c for c in cands if not _stratum(c, today).startswith("far|")]
+    far_slots = min(len(far), round(slots * far_share))
+    near_slots = min(len(near), slots - far_slots)
+    far_slots = min(len(far), slots - near_slots)  # near pool short: give the rest to far
+
+    chosen: list[tuple[str, int]] = []
+    for pool, n in ((far, far_slots), (near, near_slots)):
+        with_r = [c for c in pool if c.get("has_price_ranges")]
+        without = [c for c in pool if not c.get("has_price_ranges")]
+        n_r = min(len(with_r), round(n * ranges_share))
+        n_0 = min(len(without), n - n_r)
+        n_r = min(len(with_r), n - n_0)  # without-pool short: give the rest to the ranges pool
+        picked_r = select_diverse(with_r, n_r, today, 1.0, seed=f"{seed}-{len(chosen)}", existing=existing)
+        by_id = {c["event_id"]: c for c in with_r}
+        existing += [(by_id[e].get("venue_id"), by_id[e].get("attraction_ids")) for e in picked_r]
+        chosen += [(e, 1) for e in picked_r] + [(e, 0) for e in _proportional_random(without, n_0, today, rng)]
+
+    avail: dict[tuple[str, int], int] = {}
+    for c in cands:
+        k = (_stratum(c, today), int(bool(c.get("has_price_ranges"))))
+        avail[k] = avail.get(k, 0) + 1
+    by_id = {c["event_id"]: c for c in cands}
+    keys = {e: (_stratum(by_id[e], today), flag) for e, flag in chosen}
+    sel: dict[tuple[str, int], int] = {}
+    for k in keys.values():
+        sel[k] = sel.get(k, 0) + 1
+    return [{"event_id": e, "selected_for_ranges": flag, "stratum": keys[e][0],
+             "selection_prob": round(sel[keys[e]] / avail[keys[e]], 6),
+             "has_ranges_at_selection": int(bool(by_id[e].get("has_price_ranges")))}
+            for e, flag in chosen]
+
+
 def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: int = 3000,
              days_min: int = 1, days_max: int = 120, max_calls: int = 700, far_share: float = 0.6,
              max_pages_per_day: int = 5) -> RunStats:
@@ -820,7 +932,7 @@ def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: i
     slots = max(0, target - active)
     lo, hi = (today + timedelta(days=days_min)).isoformat(), (today + timedelta(days=days_max)).isoformat()
     cols = ["event_id", "name", "local_date", "event_status", "segment", "genre", "venue_id", "state",
-            "attraction_ids"]
+            "attraction_ids", "has_price_ranges", "first_seen_on", "first_has_ranges", "ranges_seen_on"]
     cands = [dict(zip(cols, r)) for r in conn.execute(
         f"SELECT {','.join(cols)} FROM discover_candidates WHERE local_date BETWEEN ? AND ? "
         "AND event_id NOT IN (SELECT event_id FROM watchlist) "
@@ -831,25 +943,36 @@ def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: i
     existing = conn.execute(
         "SELECT c.venue_id, c.attraction_ids FROM watchlist w JOIN discover_candidates c USING(event_id) "
         "WHERE w.active=1").fetchall()
-    chosen = select_diverse(cands, slots, today, far_share, seed=today.isoformat(),
-                            existing=existing) if slots else []
+    chosen = select_panel(cands, slots, today, far_share, seed=today.isoformat(),
+                          existing=existing) if slots else []
     now = clock.now().isoformat()
     by_id = {c["event_id"]: c for c in cands}
-    conn.executemany("INSERT OR IGNORE INTO watchlist(event_id, added_at, source, event_date) VALUES (?,?,?,?)",
-                     [(e, now, "discover", by_id[e]["local_date"]) for e in chosen])
+    promos = []
+    for p in chosen:
+        c = by_id[p["event_id"]]
+        promoted = p["selected_for_ranges"] and c.get("first_has_ranges") == 0
+        conn.execute("INSERT OR IGNORE INTO watchlist(event_id, added_at, source, event_date, selected_for_ranges, "
+                     "stratum, selection_prob, has_ranges_at_selection) VALUES (?,?,?,?,?,?,?,?)",
+                     (p["event_id"], now, "promotion" if promoted else "discover", c["local_date"],
+                      p["selected_for_ranges"], p["stratum"], p["selection_prob"], p["has_ranges_at_selection"]))
+        if promoted:
+            days_out = (date.fromisoformat(c["local_date"]) - today).days
+            promos.append(p["event_id"])
+            conn.execute("INSERT OR IGNORE INTO promotions(event_id, promoted_on, first_seen_on, ranges_seen_on, "
+                         "days_out_at_promotion) VALUES (?,?,?,?,?)",
+                         (p["event_id"], today.isoformat(), c.get("first_seen_on"), c.get("ranges_seen_on"),
+                          days_out))
+            log.info("promotion event=%s first_seen=%s ranges_seen=%s days_out=%d (path starts today)",
+                     p["event_id"], c.get("first_seen_on"), c.get("ranges_seen_on"), days_out)
     conn.commit()
     stats.added_to_watchlist = len(chosen)
+    if promos:
+        log.info("discover: %d promotion(s) of events that gained priceRanges", len(promos))
     _finish_run(conn, run_id, stats, clock)
     log.info("discover: %d candidates in window, %d active, added %d (target %d), calls=%d%s",
              len(cands), active, len(chosen), target, stats.calls_used,
              f" stopped={stats.stopped_reason}" if stats.stopped_reason else "")
     return stats
-
-
-def discover_due(conn: sqlite3.Connection, today: date) -> bool:
-    row = conn.execute("SELECT MAX(snap_date) FROM runs WHERE command='discover' AND finished_at IS NOT NULL "
-                       "AND stopped_reason IS NULL").fetchone()
-    return not row[0] or (today - date.fromisoformat(row[0])).days >= DISCOVER_EVERY_DAYS
 
 
 # --------------------------------------------------------------------------- watchlist + misc commands
@@ -902,6 +1025,10 @@ def status(conn: sqlite3.Connection, clock: Clock) -> str:
         f"  active with >=60 days still to go: "
         f"{q('SELECT COUNT(*) FROM watchlist WHERE active=1 AND event_date >= ?', (date.fromisoformat(today) + timedelta(days=60)).isoformat())}",
         f"  first observed >=60 days out: {q('SELECT COUNT(*) FROM watchlist WHERE first_days_out >= 60')}",
+        f"  by selection: ranges-pool {q('SELECT COUNT(*) FROM watchlist WHERE active=1 AND selected_for_ranges=1')}, "
+        f"random no-ranges {q('SELECT COUNT(*) FROM watchlist WHERE active=1 AND selected_for_ranges=0')}, "
+        f"other/pilot {q('SELECT COUNT(*) FROM watchlist WHERE active=1 AND selected_for_ranges IS NULL')}; "
+        f"promotions total {q('SELECT COUNT(*) FROM promotions')}",
         f"snapshots today: {q('SELECT COUNT(*) FROM snapshots WHERE snap_date=?', today)}",
         f"snapshots total: {q('SELECT COUNT(*) FROM snapshots')} over "
         f"{q('SELECT COUNT(DISTINCT snap_date) FROM snapshots')} day(s)",
@@ -917,6 +1044,36 @@ def status(conn: sqlite3.Connection, clock: Clock) -> str:
                      f"missing_pr={r[6]} 404={r[7]} err={r[8]} added={r[9]} left={r[10]}"
                      + (f" stopped='{r[11]}'" if r[11] else ""))
     return "\n".join(lines)
+
+
+FILL_BUCKETS = [(1, 6), (7, 13), (14, 29), (30, 44), (45, 59), (60, 89), (90, 120)]
+
+
+def fill_report(conn: sqlite3.Connection, clock: Clock) -> str:
+    """priceRanges fill on the discover candidate pool (Music, US, not excluded), by days out and genre."""
+    today = clock.now().date()
+    rows = [r for r in conn.execute(
+        "SELECT name, local_date, genre, has_price_ranges, seen_on FROM discover_candidates "
+        "WHERE COALESCE(segment,'Music')='Music' AND COALESCE(event_status,'') <> 'cancelled' AND local_date > ?",
+        (today.isoformat(),)) if not EXCLUDE_NAME_RE.search(r[0] or "")]
+    out = [f"priceRanges fill on {len(rows):,} candidate events (scans up to {today}; days out from today)", "",
+           "| days out | events | fill % |", "|---|---|---|"]
+    for lo, hi in FILL_BUCKETS:
+        b = [r[3] for r in rows if lo <= (date.fromisoformat(r[1]) - today).days <= hi]
+        out.append(f"| {lo}-{hi} | {len(b):,} | {100 * sum(b) / len(b):.1f} |" if b else f"| {lo}-{hi} | 0 | - |")
+    b = [r[3] for r in rows if (date.fromisoformat(r[1]) - today).days >= 45]
+    if b:
+        out.append(f"| **>=45** | {len(b):,} | **{100 * sum(b) / len(b):.1f}** |")
+    out += ["", "| genre | events | fill % |", "|---|---|---|"]
+    by_g: dict[str, list[int]] = {}
+    for r in rows:
+        by_g.setdefault(r[2] or "(none)", []).append(r[3])
+    for g, v in sorted(by_g.items(), key=lambda kv: -len(kv[1]))[:15]:
+        out.append(f"| {g} | {len(v):,} | {100 * sum(v) / len(v):.1f} |")
+    allv = [r[3] for r in rows]
+    if allv:
+        out.append(f"| **all** | {len(allv):,} | **{100 * sum(allv) / len(allv):.1f}** |")
+    return "\n".join(out)
 
 
 def prune(conn: sqlite3.Connection, keep_days: int, clock: Clock) -> int:
@@ -969,6 +1126,7 @@ def build_parser() -> argparse.ArgumentParser:
     wsub.add_parser("import").add_argument("csv", type=Path)
     wsub.add_parser("export").add_argument("csv", type=Path)
     sub.add_parser("status")
+    sub.add_parser("fill-report", help="priceRanges fill on the candidate pool by days out and genre")
     pr = sub.add_parser("prune", help="delete snapshots older than N days (storage-terms hygiene)")
     pr.add_argument("--keep-days", type=int, required=True)
     return p
@@ -1001,6 +1159,9 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         if args.cmd == "status":
             print(status(conn, clock))
             return EXIT_OK
+        if args.cmd == "fill-report":
+            print(fill_report(conn, clock))
+            return EXIT_OK
         if args.cmd == "prune":
             print(f"deleted {prune(conn, args.keep_days, clock)} snapshots older than {args.keep_days} days")
             return EXIT_OK
@@ -1010,7 +1171,9 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         try:
             if args.cmd in ("run", "daily"):
                 stats = run_snapshots(conn, client, clock, getattr(args, "limit", None), command=args.cmd)
-                if args.cmd == "daily" and not stats.stopped_reason and discover_due(conn, clock.now().date()):
+                # Discover every day: only stale (>= 7 days) or new day-slices are searched, so this is
+                # a few calls most days and a full rescan (incl. promotions) once a week.
+                if args.cmd == "daily" and not stats.stopped_reason:
                     max_calls = min(args.max_calls, client.budget.remaining())
                     if max_calls > 0:
                         d = discover(conn, client, clock, args.target, args.days_min, args.days_max,

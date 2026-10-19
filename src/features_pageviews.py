@@ -30,6 +30,10 @@ def _cache_name(title: str) -> str:
     return quote(wiki_title_key(title), safe="")[:200] + ".json"
 
 
+def is_cached(title: str) -> bool:
+    return (CACHE / _cache_name(wiki_title_key(title))).exists()
+
+
 def fetch_daily(title: str) -> pd.Series | None:
     """Daily user views for one article, indexed by date. None if the article has no data."""
     key = wiki_title_key(title)

@@ -60,7 +60,7 @@ def pids(pattern: str) -> list[int]:
 def py_pids(script_args: str) -> list[int]:
     """Python processes whose command line starts with the interpreter and this script (not shells
     or supervisors that merely mention it)."""
-    return pids(r"^[^ ]*python[^ ]* (-u )?" + re.escape(script_args))
+    return pids(r"^[^ ]*python[^ ]* (-u )?([^ ]*/)?" + re.escape(script_args))
 
 
 def proc_age(pid: int) -> float | None:
@@ -362,6 +362,60 @@ def check_rebrowser() -> None:
         add("ALERT", f"{key}.dead", f"rebrowser: not running and log not complete; tail: {lines[-3:]}")
 
 
+# --- analyst (task 5) -----------------------------------------------------------------------
+ANALYST_START = dt.datetime(2026, 10, 19, 16, 20).timestamp()  # lead: analyst started task 5
+ANALYST_STALE_S = 45 * 60
+ANALYST_PATHS = [ROOT / "src" / "analysis", ROOT / "data" / "shows.parquet",
+                 ROOT / "data" / "DATA_DICTIONARY.md", ROOT / "reports" / "data_quality.md"]
+
+
+def check_analyst() -> None:
+    newest, newest_path, present = 0.0, None, []
+    for p in ANALYST_PATHS:
+        files = [p] if p.is_file() else [f for f in p.rglob("*") if f.is_file() and "__pycache__" not in f.parts] \
+            if p.is_dir() else []
+        if files:
+            present.append(p.relative_to(ROOT).as_posix())
+        for f in files:
+            m = f.stat().st_mtime
+            if m > newest:
+                newest, newest_path = m, f.relative_to(ROOT).as_posix()
+    ref = max(newest, ANALYST_START)
+    if NOW - ref > ANALYST_STALE_S:
+        what = f"newest change {newest_path} {fmt_age(NOW - newest)}" if newest_path else \
+            f"none of its outputs exist {fmt_age(NOW - ANALYST_START)} after start"
+        add("ALERT", "analyst.stale", f"analyst: no output change for 45+ min ({what}); "
+            f"ask lead whether the analyst has reported")
+    else:
+        add("OK", "analyst.active", f"analyst: present {present or 'none yet'}; newest "
+            f"{newest_path or '-'} {fmt_age(NOW - newest) if newest else ''}")
+
+
+# --- caffeinate (keeps the Mac awake until the lead creates PROJECT_DONE) --------------------
+PROJECT_DONE = LOGS / "PROJECT_DONE"
+
+
+def check_caffeinate() -> None:
+    caf = pids(r"^caffeinate -dims")
+    stopper = pids(r"caffeinate_stopper\.sh")
+    if PROJECT_DONE.exists():
+        add("OK", "caffeinate.done", f"caffeinate: PROJECT_DONE exists; caffeinate {'still running ' + str(caf) if caf else 'stopped'}")
+        return
+    if not caf:
+        add("ALERT", "caffeinate.dead", "caffeinate -dims is not running and PROJECT_DONE does not exist: the Mac can sleep")
+    else:
+        add("OK", "caffeinate.alive", f"caffeinate pid {caf}")
+    if not stopper:
+        add("INFO", "caffeinate.stopper", "caffeinate_stopper.sh not running (caffeinate won't be stopped at PROJECT_DONE)")
+    power = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+    if "Battery Power" in power:
+        m = re.search(r"(\d+)%", power)
+        pct = int(m.group(1)) if m else None
+        lvl = "ALERT" if pct is not None and pct < 25 else "INFO"
+        add(lvl, "power.battery", f"on battery ({pct}%): caffeinate -s has no effect, closing the lid still sleeps "
+            f"the Mac, and an empty battery stops every job")
+
+
 # --- git staging, disk ---------------------------------------------------------------------
 KEYLIKE = re.compile(r"(?i)(api[_-]?key|secret|token|passw(or)?d|auth)\s*[:=]\s*['\"]?[A-Za-z0-9_\-./+]{12,}"
                      r"|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_\-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|xox[abp]-[A-Za-z0-9-]{10,}")
@@ -391,7 +445,9 @@ def main() -> None:
                                      r"^done; transient", ["features_venue.parquet"], 900),
                lambda: check_feature("features_artist", "features_artist.py", r"artist \d+/\d+",
                                      r"^transient network skips", ["features_artist.parquet"], 1200),
-               check_spacing, check_venue_outputs, check_weather, check_rebrowser, check_git, check_disk):
+               lambda: check_feature("features_bill", "features_bill.py", r"^\S+\s+\d\.\d+$",
+                                     r"farewell_flag", ["features_bill.parquet"], 1200),
+               check_spacing, check_venue_outputs, check_weather, check_rebrowser, check_analyst, check_caffeinate, check_git, check_disk):
         try:
             fn()
         except Exception as exc:  # a broken check must not hide the others

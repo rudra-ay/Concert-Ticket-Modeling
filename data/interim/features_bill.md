@@ -2,6 +2,8 @@
 
 One row per `show_id`. Built by `src/features_bill.py` (rerunnable from cache: `.venv/bin/python src/features_bill.py`; run after `features_venue.py`, whose `venue_type` it reads).
 
+**Build stages (2026-10-19):** the Wikidata lock goes to venues first (they gate LEVEL), so this table is published in stages; rows say which via `wikidata_status` / `opener_pv_status`. (1) No Wikidata, pageviews from cache only. (2) Linked-opener pageviews fetched (wikimedia.org). (3) Full build with opener name matching and album verification, after the venue priced milestone (`src/features_chain.py`). Bill size, co-headliner, festival, farewell and reunion columns are final from stage 1 on.
+
 **Sources:** the spine's `opening_acts_raw` / `opening_acts_wikilinks` / `artist_wikilink` / `tour_title` / `tour_page_id` / `tour_infobox_album` (enwiki tour tables, CC BY-SA 4.0); enwiki 20261001 category membership of the tour article (dumps, CC BY-SA 4.0); Wikidata EntityData (CC0) to verify opener and album items; Wikimedia pageviews REST API (CC0) for opener and album attention. Every pageview window ends the **day before** the show.
 
 | column | type | unit / values | definition | null meaning |
@@ -22,6 +24,8 @@ One row per `show_id`. Built by `src/features_bill.py` (rerunnable from cache: `
 | tour_album_title | string | enwiki title | the tour's album (`tour_infobox_album`), accepted only if the Wikidata item is an album type **and** its performer (P175) is a headliner. Tries `<Album> (<Artist> album)`, `<Album> (album)`, `<Album>` | no album in the infobox, "Various", or not verifiable |
 | album_pv_mean_90d | float | views/day | mean daily views of the album article, days −90…−1 | no verified album, or window outside 2015-07-01…2026-10-17 / before the article existed |
 | album_pv_momentum | float | log ratio | log((days −30…−1 mean + 1)/(days −90…−61 mean + 1)) for the album article | as above |
+| opener_pv_status | string | `done` / `pending` | `pending` = at least one linked opener's pageviews weren't fetched yet in this build, so `opener_pv_*` and `n_openers_with_pv` are incomplete (a lower bound) | never null |
+| wikidata_status | string | `done` / `pending` | `pending` = the Wikidata-dependent fields weren't computed in this build: `n_openers_name_matched` (null), `tour_album_title`, `album_pv_mean_90d`, `album_pv_momentum` (all null), and opener pageviews cover **linked** openers only | never null |
 | festival_flag | bool | | any of the `festival_reason` rules | never null |
 | festival_reason | string | `title_keyword` (tour title or table caption contains "festival"/"fest"), `venue_name_keyword`, `venue_type` (venue is a festival ground), `bill_size>=5` | first rule that fired | not a festival |
 | farewell_flag | bool | | tour title matches `FAREWELL` (farewell, final tour, the final, last tour, goodbye, end of the road, retirement, one last, …) **or** the tour article is in `Category:Farewell concert tours` | never null |

@@ -28,6 +28,7 @@ import pandas as pd
 import requests
 
 from features_metro import PLACE_COORD_OVERRIDES
+from features_metro import _haversine_km
 from context_http import RAW, BlockedError, load_spine, load_venue_coords, out_dir, polite_get, write_atomic
 
 API = "https://archive-api.open-meteo.com/v1/archive"
@@ -38,6 +39,9 @@ EVENING_HOURS = range(18, 24)  # 18:00-23:00 local, inclusive
 DAILY = ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_hours",
          "wind_speed_10m_max", "weather_code"]
 HOURLY = ["temperature_2m", "precipitation", "wind_speed_10m", "weather_code"]
+# A cached response for the same venue within this distance is reused (e.g. after a switch from a city
+# centroid to Wikidata venue coordinates). The reanalysis grid is ~9-25 km, so this changes nothing material.
+REUSE_KM = 5.0
 BATCH_LOCATIONS = 20  # 40-venue x 14-day requests timed out ~5% of the time
 WINDOW_DAYS = 14  # requests cover fixed 14-day windows: all venues with a show in the window, one call each
 WINDOW_EPOCH = dt.date(1970, 1, 5)
@@ -114,25 +118,30 @@ def _coord_key(lat: float, lon: float) -> str:
     return f"{lat:.3f}_{lon:.3f}"
 
 
-def cache_index() -> dict[tuple[str, str], list[tuple[dt.date, dt.date, str]]]:
-    """(venue_id, coord_key) -> [(start, end, path)] for every cached response (single- or multi-day)."""
+def cache_index() -> dict[str, list[tuple[float, float, dt.date, dt.date, str]]]:
+    """venue_id -> [(lat, lon, start, end, path)] for every cached response (single- or multi-day)."""
     idx: dict = collections.defaultdict(list)
     for p in CACHE.glob("*.json"):
         if p.name.startswith("_"):
             continue
         try:
             venue_id, coords, start, end = p.stem.rsplit("__", 3)
-            idx[(venue_id, coords)].append((dt.date.fromisoformat(start), dt.date.fromisoformat(end), str(p)))
+            la, lo = (float(x) for x in coords.rsplit("_", 1))
+            idx[venue_id].append((la, lo, dt.date.fromisoformat(start), dt.date.fromisoformat(end), str(p)))
         except ValueError:
             continue
     return idx
 
 
-def cached_path(idx, venue_id: str, lat: float, lon: float, day: dt.date) -> str | None:
-    for start, end, path in idx.get((venue_id, _coord_key(lat, lon)), []):
+def cached_path(idx, venue_id: str, lat: float, lon: float, day: dt.date) -> tuple[str | None, float | None]:
+    """Closest cached response for this venue covering `day`, if within REUSE_KM of (lat, lon)."""
+    best: tuple[float, str] | None = None
+    for la, lo, start, end, path in idx.get(venue_id, []):
         if start <= day <= end:
-            return path
-    return None
+            km = float(_haversine_km(lat, lon, la, lo))
+            if km <= REUSE_KM and (best is None or km < best[0]):
+                best = (km, path)
+    return (best[1], best[0]) if best else (None, None)
 
 
 def window_of(day: dt.date, last_available: dt.date) -> tuple[dt.date, dt.date]:
@@ -215,10 +224,11 @@ def _table(shows: pd.DataFrame, last_available: dt.date, unfetched: str) -> pd.D
         elif s.day > last_available:
             rec["wx_status"] = "not_yet_in_archive"
         else:
-            path = cached_path(idx, s.venue_id, s.lat, s.lon, s.day)
+            path, km = cached_path(idx, s.venue_id, s.lat, s.lon, s.day)
             if path is None:
                 rec["wx_status"] = unfetched
             else:
+                rec["wx_coord_reuse_km"] = round(km, 2)
                 with open(path) as f:
                     rec.update(summarise(json.load(f), s.day))
                 rec["wx_status"] = "ok" if "wx_temp_max_c" in rec else "date_missing_in_response"
@@ -257,7 +267,7 @@ def build(spine: pd.DataFrame, today: dt.date | None = None) -> tuple[pd.DataFra
         lat=("lat", "first"), lon=("lon", "first"), priced=("priced", "max"))
 
     idx = cache_index()
-    need["path"] = [cached_path(idx, r.venue_id, r.lat, r.lon, r.day) for r in need.itertuples()]
+    need["path"] = [cached_path(idx, r.venue_id, r.lat, r.lon, r.day)[0] for r in need.itertuples()]
     todo = need[need.path.isna()].copy()
     win = [window_of(d, last_available) for d in todo.day]
     todo["w_start"], todo["w_end"] = [w[0] for w in win], [w[1] for w in win]

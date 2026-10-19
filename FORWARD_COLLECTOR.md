@@ -2,13 +2,29 @@
 
 `forward_collector.py` takes one snapshot a day of Ticketmaster's public event data (price ranges, sale dates, status, venue, artists, genre) for a watchlist of upcoming US concerts and stores it in SQLite. It is the forward-looking half of the PATH data: nothing is available retroactively, so **every day it isn't running is lost for good.**
 
-Source: SOURCES.md A6 (ALLOWED). Decisions: DECISIONS.md items 4 and 5. Attribution: "Data from Ticketmaster Discovery API".
+Source: SOURCES.md A6 (ALLOWED). Decisions: DECISIONS.md items 4 and 5, plus option (b) of 2026-10-19 (below). Attribution: "Data from Ticketmaster Discovery API". Data dictionary: `data/interim/forward_tm_panel.md`.
 
-## Status today (2026-10-18)
+> **What the prices are.** Ticketmaster `priceRanges` are **PRIMARY-market face-value ranges** (min and max of Ticketmaster's own price levels). Every range seen so far is type **`standard`, USD, without fees**. They are **not resale prices**. PATH from this panel therefore measures **primary / dynamic face-price movement** (tier releases, repricing, status changes). **Resale paths still depend on the Rebrowser grant (REBROWSER_REQUEST.md) or the marketplace permissions (PERMISSION_REQUESTS.md).** The panel is also deliberately **tilted toward genres where Ticketmaster publishes ranges** (Jazz, Alternative, Folk); see "Pilot result" and use the IPW weights.
 
-- Built and tested without a key (28 pytest tests, with fixtures and a fake HTTP layer; no live calls).
-- **Blocked on `TICKETMASTER_API_KEY`.** Without it, `run`, `discover` and `daily` print a clear message and exit with code 3 having fetched nothing. `watchlist`, `status` and `prune` work without a key.
-- The launchd job is **not installed**. Install it once the key exists (below).
+## Status (2026-10-19)
+
+- **Collecting since 2026-10-19.** The key is in `.env`. The launchd job runs `daily` at 09:15 local time (§2).
+- STATUS_PLACEHOLDER
+
+## Pilot result and option (b) (2026-10-19)
+
+The pilot found a **priceRanges fill rate below the 30% threshold**: 26.2% of search candidates and 15% of 40 detail responses. The full discover measured fill on the whole candidate pool of US music events. Regenerate this table with `.venv/bin/python forward_collector.py fill-report`.
+
+FILL_PLACEHOLDER
+
+Fill for shows ≥45 days out (24.3%) is close to the pilot's 26.2%. The 90–120 day band is lower (19.0%), so ranges are often published later. **Missingness depends heavily on genre**, so an unweighted panel would be thin, and a ranges-only panel would be biased.
+
+**Decision (lead, 2026-10-19): option (b), a ranges-tilted stratified panel.**
+- Strata are (band, state, genre), where band = `far` (show ≥60 days out on the selection day) or `near`. 60% of new slots go to the far band.
+- In each band, **80% of slots go to events that publish priceRanges**, picked round-robin across strata with soft per-venue and per-artist caps. The remaining **20% are a simple random draw within each stratum** (proportional allocation) of events **without** ranges. This shows whether ranges appear or disappear later, and supports inverse-probability weighting.
+- When a pool runs short, its slots overflow to the other pool. On 2026-10-19 the far band had only 1,165 priced events in total, and all of them were taken (p = 1). The far band is therefore 1,165 with ranges plus 515 random without (69/31).
+- Every watchlist row records `selected_for_ranges`, `stratum`, `selection_prob` (selected / available in its stratum and pool) and `has_ranges_at_selection`. The 200 pilot events are marked `source='discover-pilot'` and carry no weights.
+- **Promotions:** `daily` runs discover every day. Day-slices are re-searched once they are 7 or more days old, so every show is rescanned weekly and each new day-120 slice is picked up daily. A candidate first seen without ranges that later shows them can fill a free slot. It is logged (`promotion event=...`) and recorded in the `promotions` table with its `first_seen_on`, `ranges_seen_on` and `promoted_on` (= path start). **Never back-date a promoted event's path.**
 
 ## 1. Add the key (user action)
 
@@ -17,7 +33,7 @@ Source: SOURCES.md A6 (ALLOWED). Decisions: DECISIONS.md items 4 and 5. Attribut
    ```
    TICKETMASTER_API_KEY=<your consumer key>
    ```
-3. Run a small pilot by hand:
+3. (Done 2026-10-19.) Run a small pilot by hand:
    ```
    .venv/bin/python forward_collector.py discover --target 200 --max-calls 60
    .venv/bin/python forward_collector.py run
@@ -52,9 +68,9 @@ To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-co
 
 `daily` does the following:
 1. **Snapshot.** It calls `GET /discovery/v2/events/{id}.json` once per active watchlist event, nearest show first, so that if the budget runs out, the events closest to their show (where PATH moves most) are covered.
-2. **Discover.** If the last full discover is 7 or more days old, it searches `events.json?classificationName=music&countryCode=US` one UTC day at a time for 1–120 days out (200 per page, up to Ticketmaster's 1,000-item deep-paging cap per day) and tops the watchlist up to `--target` (default 3,000) active events. New events are snapshotted the same day.
+2. **Discover (every day; cheap).** Only day-slices that are new or 7 or more days old are searched, so most days cost a few calls and one day a week costs about 150–250 (a full rescan). It searches `events.json?classificationName=music&countryCode=US` one UTC day at a time for 1–120 days out (200 per page, up to Ticketmaster's 1,000-item deep-paging cap per day) and tops the watchlist up to `--target` (default 3,000) active events using the option (b) selection above. New events are snapshotted the same day.
 
-Discover picks for diversity. It round-robins over (state × genre) strata, with soft caps per venue and per artist: 3 each to start, doubling only when slots would otherwise go unfilled. It excludes parking, upgrades, and add-ons. `--far-share 0.6` sends 60% of new slots to shows 60 or more days out, because only those can yield a full 60-day path. The Discovery API has no venue capacity, so venue size diversity comes from spreading across many venues. Capacity is joined later from Wikidata.
+Within the with-ranges pool, discover picks for diversity. It round-robins over (state × genre) strata, with soft caps per venue and per artist: 3 each to start, doubling only when slots would otherwise go unfilled. It excludes parking, upgrades, and add-ons. `--far-share 0.6` sends 60% of new slots to shows 60 or more days out, because only those can yield a full 60-day path. The Discovery API has no venue capacity, so venue size diversity comes from spreading across many venues. Capacity is joined later from Wikidata.
 
 Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs an `event_id` column), and `watchlist export out.csv`. Events drop off automatically once their date has passed, once they are cancelled, or after three 404s in a row.
 
@@ -86,18 +102,18 @@ Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs
 - **Coverage:** the event is first observed **60 or more days before the show** (`watchlist.first_days_out >= 60`) and still observed on show day or the day before.
 - **Frequency:** one snapshot a day. Ticketmaster's primary prices change in steps (tier releases; LITERATURE H20), so daily resolution is enough. Intraday is out of budget and pointless for face prices.
 - **Completeness:** no more than 10% of days missing in the 60-day window. Gaps from a sleeping laptop are fine if they're scattered.
-- **Size:** at least **300 events with complete 60-day paths *and* non-missing priceRanges** to estimate an average path shape. About **1,000 or more** are needed to split by the moderators in H5 and H9 (sold-out status, genre, venue size, metro). With target 3,000 and far-share 0.6, about 1,800 far-out events enter on day 1. If the fill rate is around 50%, that gives roughly 900 usable complete paths.
+- **Size:** at least **300 events with complete 60-day paths *and* non-missing priceRanges** to estimate an average path shape. About **1,000 or more** are needed to split by the moderators in H5 and H9 (sold-out status, genre, venue size, metro). **Actual (2026-10-19):** 1,680 far events entered on day 1. **1,165 of them already publish priceRanges**, which is the expected number of complete priced 60-day paths. Every far event with ranges in the US pool was taken. Add to that the far random-draw events that gain ranges later, plus later cohorts and promotions. That clears the 1,000 bar for the first cohort alone, with the genre tilt noted above.
 
-**Timeline, counted from the day the key goes in (day K):**
-- **K + 60 days:** the first complete 60-day paths, for shows that were 60 days out on day K.
-- **K + 120 days:** every event that was 60–120 days out on day K has finished. This is the **minimum run length.** If K is around 2026-10-20, that means running until about **2027-02-20**.
-- **K + 180 days (recommended):** weekly discovery keeps adding shows that are 60–120 days out, which brings in spring tours, more genres, and enough events for the moderator splits.
+**Timeline (collection started on day K = 2026-10-19):**
+- **2026-12-18 (K + 60 days):** the first complete 60-day paths land, for shows that were 60 days out on 2026-10-19. They keep landing daily after that.
+- **2027-02-16 (K + 120 days):** the last show of the first cohort (120 days out on 2026-10-19) has finished. This is the **minimum run length.**
+- **About 2027-04-17 (K + 180 days, recommended):** weekly discovery keeps adding shows that are 60–120 days out, which brings in spring tours, more genres, and enough events for the moderator splits.
 
 **What each day of delay costs:** about 3,000 event-day snapshots, gone for good. The day's discovery cohort also slides out of the "60 or more days out" window: shows that are exactly 60 days out today will never have a complete 60-day path. Nothing can be backfilled from the API.
 
 ## 5. Limitation: this is primary-market face data, not resale
 
-Discovery's `priceRanges` is Ticketmaster's own **primary** price range for the event: min and max face value, sometimes with fees (`standard including fees`), across price levels. It is not the lowest available ticket, not a distribution, and not resale (Verified Resale listings are not included). Platinum or VIP pricing can inflate `max`. The field is often missing, and that is measured, not assumed (`missing_price_ranges`).
+Discovery's `priceRanges` is Ticketmaster's own **primary** price range for the event: min and max face value across price levels. The API can also return a fee-inclusive type (`standard including fees`), but **none appeared in the 2026-10-19 pilot or the first snapshots: every range was `standard`, without fees**. It is not the lowest available ticket, not a distribution, and not resale (Verified Resale listings are not included). Platinum or VIP pricing can inflate `max`. The field is often missing, and that is measured, not assumed (`missing_price_ranges`).
 
 It **can** test: primary repricing and tier steps (H20), dynamic or platinum primary pricing (H9, primary side), status changes, and on-sale lead times. As LEVEL features it gives face value, genre, and venue.
 

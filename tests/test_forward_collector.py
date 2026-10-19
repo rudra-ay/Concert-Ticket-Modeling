@@ -415,7 +415,7 @@ class AnyEvent(dict):
         return load("event_with_ranges.json")
 
 
-def test_daily_runs_discover_only_when_due(tmp_path, monkeypatch, clock):
+def test_daily_discover_searches_only_stale_slices(tmp_path, monkeypatch, clock):
     monkeypatch.setenv("TICKETMASTER_API_KEY", KEY)
     db = tmp_path / "x.sqlite"
     t = FakeTransport(clock, AnyEvent(), search=search_responder(per_day=10, today=T0.date()))
@@ -428,9 +428,118 @@ def test_daily_runs_discover_only_when_due(tmp_path, monkeypatch, clock):
     assert db_.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 20  # new adds snapshotted on day 0
     clock.advance_days(1)
     assert fc.main(args, transport=t, clock=clock, log_to_file=False) == 0
-    assert sum(1 for c in t.calls if c[1].endswith("/events.json")) == n_search  # discover not due again yet
+    # Next day: discover runs again but only searches the one new day-slice (others are < 7 days old).
+    assert sum(1 for c in t.calls if c[1].endswith("/events.json")) == n_search + 1
     assert db_.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 40
-    assert db_.execute("SELECT COUNT(*) FROM runs WHERE command='daily-new'").fetchone()[0] == 1
+
+
+# ------------------------------------------------------------------ option (b): ranges-tilted stratified panel
+
+
+def make_cands(n: int, today: date, seed: int = 0) -> list[dict]:
+    import random as _r
+    rng = _r.Random(seed)
+    out = []
+    for i in range(n):
+        out.append({"event_id": f"C{i:05d}", "name": f"Show {i}",
+                    "local_date": (today + timedelta(days=rng.choice([10, 30, 70, 100]))).isoformat(),
+                    "state": rng.choice(["NY", "CA", "TX"]), "genre": rng.choice(["Rock", "Jazz"]),
+                    "venue_id": f"V{i}", "attraction_ids": f"A{i}",
+                    "has_price_ranges": int(rng.random() < 0.25)})
+    return out
+
+
+def test_select_panel_80_20_split_strata_and_probabilities():
+    today = T0.date()
+    cands = make_cands(4000, today)
+    picks = fc.select_panel(cands, 1000, today, far_share=0.6, seed="x")
+    assert len(picks) == 1000 and len({p["event_id"] for p in picks}) == 1000
+    by_id = {c["event_id"]: c for c in cands}
+    far = [p for p in picks if p["stratum"].startswith("far|")]
+    assert len(far) == 600
+    for band in (far, [p for p in picks if p["stratum"].startswith("near|")]):
+        flagged = sum(p["selected_for_ranges"] for p in band)
+        assert flagged == round(len(band) * fc.RANGES_SHARE)
+    for p in picks:
+        assert p["selected_for_ranges"] == p["has_ranges_at_selection"] == by_id[p["event_id"]]["has_price_ranges"]
+        assert p["stratum"].count("|") == 2 and 0 < p["selection_prob"] <= 1
+    # selection_prob = selected / available in (stratum, pool)
+    from collections import Counter
+    sel = Counter((p["stratum"], p["selected_for_ranges"]) for p in picks)
+    avail = Counter((fc._stratum(c, today), c["has_price_ranges"]) for c in cands)
+    for p in picks:
+        k = (p["stratum"], p["selected_for_ranges"])
+        assert p["selection_prob"] == pytest.approx(sel[k] / avail[k], abs=1e-6)
+    # The no-ranges draw is proportional: within a band, probabilities are (nearly) equal across strata.
+    for band in ("far|", "near|"):
+        probs = {p["stratum"]: p["selection_prob"] for p in picks
+                 if p["stratum"].startswith(band) and p["selected_for_ranges"] == 0}
+        assert max(probs.values()) - min(probs.values()) < 0.02
+    # Deterministic for a seed.
+    assert fc.select_panel(cands, 1000, today, 0.6, seed="x") == picks
+
+
+def test_select_panel_short_pools_overflow():
+    today = T0.date()
+    cands = make_cands(300, today)
+    with_r = sum(c["has_price_ranges"] for c in cands)
+    picks = fc.select_panel(cands, 300, today, 0.6, seed="y")
+    assert len(picks) == 300 and sum(p["selected_for_ranges"] for p in picks) == with_r
+    only_without = [dict(c, has_price_ranges=0) for c in cands]
+    assert sum(p["selected_for_ranges"] for p in fc.select_panel(only_without, 50, today, 0.6)) == 0
+
+
+def test_promotion_logged_when_candidate_gains_ranges(conn, clock):
+    """Week 1 scan: no ranges, not selected (target full). Week 2: ranges appear and a slot frees up."""
+    today = T0.date()
+    ev = load("event_no_ranges.json")
+    ev["dates"]["start"]["localDate"] = (today + timedelta(days=80)).isoformat()
+    state = {"ranges": False}
+
+    def search(params):
+        if params["startDateTime"][:10] != ev["dates"]["start"]["localDate"]:
+            return fc.Response(200, {}, (FIX / "search_empty.json").read_bytes())
+        e = copy.deepcopy(ev)
+        e["id"] = "PROMO1"
+        if state["ranges"]:
+            e["priceRanges"] = [{"type": "standard", "currency": "USD", "min": 40.0, "max": 90.0}]
+        body = {"page": {"size": 200, "totalElements": 1, "totalPages": 1, "number": 0},
+                "_embedded": {"events": [e]}}
+        return fc.Response(200, {}, json.dumps(body).encode())
+
+    t = FakeTransport(clock, search=search)
+    fc.discover(conn, make_client(conn, clock, t), clock, target=0, days_min=79, days_max=81)
+    assert conn.execute("SELECT first_has_ranges, ranges_seen_on FROM discover_candidates").fetchone() == (0, None)
+    clock.advance_days(7)
+    state["ranges"] = True
+    fc.discover(conn, make_client(conn, clock, t), clock, target=5, days_min=72, days_max=74)
+    row = conn.execute("SELECT source, selected_for_ranges, has_ranges_at_selection FROM watchlist "
+                       "WHERE event_id='PROMO1'").fetchone()
+    assert row == ("promotion", 1, 1)
+    p = conn.execute("SELECT promoted_on, first_seen_on, ranges_seen_on, days_out_at_promotion FROM promotions").fetchone()
+    assert p == ((today + timedelta(days=7)).isoformat(), today.isoformat(), (today + timedelta(days=7)).isoformat(), 73)
+    assert conn.execute("SELECT first_has_ranges FROM discover_candidates").fetchone()[0] == 0  # first-seen kept
+
+
+def test_migration_adds_columns_to_old_db(tmp_path):
+    db = tmp_path / "old.sqlite"
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE watchlist (event_id TEXT PRIMARY KEY, added_at TEXT NOT NULL, source TEXT NOT NULL, "
+              "event_date TEXT, active INTEGER NOT NULL DEFAULT 1, deactivated_why TEXT, "
+              "not_found_streak INTEGER NOT NULL DEFAULT 0, first_days_out INTEGER)")
+    c.execute("INSERT INTO watchlist(event_id, added_at, source) VALUES ('OLD1','x','discover')")
+    c.commit(); c.close()
+    conn = fc.connect(db)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(watchlist)")}
+    assert {"selected_for_ranges", "stratum", "selection_prob", "has_ranges_at_selection"} <= cols
+    assert conn.execute("SELECT selected_for_ranges FROM watchlist").fetchone() == (None,)
+
+
+def test_fill_report(conn, clock):
+    t = FakeTransport(clock, search=search_responder(per_day=10, today=T0.date()))
+    fc.discover(conn, make_client(conn, clock, t), clock, target=0, days_min=1, days_max=70)
+    rep = fc.fill_report(conn, clock)
+    assert "| 60-89 |" in rep and "**>=45**" in rep and "| Rock |" in rep and "100.0" in rep
 
 
 # ------------------------------------------------------------------ watchlist + status

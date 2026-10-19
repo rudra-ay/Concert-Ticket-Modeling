@@ -8,6 +8,7 @@ flags come from tour-title keywords and from the tour article's enwiki categorie
 """
 from __future__ import annotations
 
+import os
 import re
 
 import numpy as np
@@ -16,10 +17,15 @@ import pandas as pd
 import features_wikidata as W
 from features_artist import _is_music_entity, split_links
 from features_common import OUT
-from features_pageviews import fetch_daily, hype_features
+from features_pageviews import fetch_daily, hype_features, is_cached
 from features_spine import load_spine
 from features_tours import tour_memberships
 from features_wikilinks import Resolver
+
+# Staging flags (see features_bill.md): Wikidata steps can be deferred while the venue
+# job has priority on the Wikidata lock; pageviews can be read from cache only.
+USE_WIKIDATA = os.environ.get("FEATURES_BILL_WIKIDATA", "1") != "0"
+FETCH_PV = os.environ.get("FEATURES_BILL_PV_FETCH", "1") != "0"
 
 FAREWELL = re.compile(r"farewell|final tour|final world tour|the final|last tour|goodbye|end of the road|"
                       r"retirement|one last|last time around|so long", re.I)
@@ -104,7 +110,9 @@ def build() -> pd.DataFrame:
         pvs, n_name_matched = [], 0
         linked_titles = {res.resolve(l)[0] for l in links}
         cands = [(l, "link") for l in links]
-        cands += [(a, "name") for a in (raw_acts or []) if res.resolve(a)[0] not in linked_titles]
+        if USE_WIKIDATA:
+            cands += [(a, "name") for a in (raw_acts or []) if res.resolve(a)[0] not in linked_titles]
+        pv_pending = False
         for l, how in cands:
             title, q = res.resolve(l)
             if not title:
@@ -114,6 +122,9 @@ def build() -> pd.DataFrame:
                     continue
                 n_name_matched += 1
             if title not in series:
+                if not FETCH_PV and not is_cached(title):
+                    pv_pending = True
+                    continue
                 series[title] = fetch_daily(title)
             pvs.append(hype_features(series[title], s.show_date, prefix="o")["o_mean_90d"]
                        if s.show_date else np.nan)
@@ -121,14 +132,19 @@ def build() -> pd.DataFrame:
 
         # Set-list proxy: attention to the album being toured (setlist.fm needs permission).
         album_key = (getattr(s, "tour_infobox_album", None), s.artist_wikilink)
-        if album_key not in album_cache:
+        if not USE_WIKIDATA:
+            album_cache.setdefault(album_key, None)
+        elif album_key not in album_cache:
             resolved_h = [res.resolve(h) for h in headliners]
             album_cache[album_key] = resolve_album(
                 res, album_key[0] if isinstance(album_key[0], str) else "",
                 [t for t, _ in resolved_h if t], {q for _, q in resolved_h if q})
         album_title = album_cache[album_key]
         if album_title and album_title not in series:
-            series[album_title] = fetch_daily(album_title)
+            if not FETCH_PV and not is_cached(album_title):
+                album_title = None
+            else:
+                series[album_title] = fetch_daily(album_title)
         album_hype = hype_features(series.get(album_title), s.show_date, prefix="album") \
             if album_title and s.show_date else {}
 
@@ -160,13 +176,15 @@ def build() -> pd.DataFrame:
             "multi_artist_flag": True if n_head > 1 else (pd.NA if pd.isna(n_open) else n_open > 0),
             "opener_names": " | ".join(links) if links else (" | ".join(raw_acts) if raw_acts else None),
             "n_openers_linked": len(links),
-            "n_openers_name_matched": n_name_matched,
+            "n_openers_name_matched": n_name_matched if USE_WIKIDATA else pd.NA,
             "n_openers_with_pv": len(pvs_ok),
             "opener_pv_mean_90d_max": max(pvs_ok) if pvs_ok else np.nan,
             "opener_pv_mean_90d_sum": sum(pvs_ok) if pvs_ok else np.nan,
             "tour_album_title": album_title,
             "album_pv_mean_90d": album_hype.get("album_mean_90d", np.nan),
             "album_pv_momentum": album_hype.get("album_momentum", np.nan),
+            "opener_pv_status": "pending" if pv_pending else "done",
+            "wikidata_status": "done" if USE_WIKIDATA else "pending",
             "festival_flag": fest_reason is not None,
             "festival_reason": fest_reason,
             "farewell_flag": bool(fw or fw_cat),
@@ -175,7 +193,7 @@ def build() -> pd.DataFrame:
             "reunion_match": (ru.group(0) if ru else None) or (ru_cat or None),
         })
     out = pd.DataFrame(rows)
-    for c in ("n_openers", "n_acts_on_bill"):
+    for c in ("n_openers", "n_acts_on_bill", "n_openers_name_matched"):
         out[c] = out[c].astype("Int32")
     out["multi_artist_flag"] = out["multi_artist_flag"].astype("boolean")
     out.to_parquet(OUT / "features_bill.parquet", index=False)

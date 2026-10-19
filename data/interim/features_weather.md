@@ -23,6 +23,7 @@ One row per `show_id`. Built by `src/features_weather.py` from the **Open-Meteo 
 | wx_status | string | `ok`, `no_coordinates`, `not_yet_in_archive`, `pending` (the run stopped on quota or pushback; rerun to fill), `request_failed`, `date_missing_in_response`, `no_date` | never null |
 | wx_coord_source | string | `venue_wikidata` or `census_place_centroid` | no coordinates |
 | wx_query_lat / wx_query_lon | float | degrees, the point we asked for | no coordinates |
+| wx_coord_reuse_km | float | distance between the current coordinates and those of the cached response used (0 = exact). A cached response for the same venue is reused within 5 km, e.g. after a switch from a city centroid to Wikidata venue coordinates. That's well inside the 9–25 km reanalysis grid | not `ok` |
 | wx_grid_lat / wx_grid_lon / wx_elevation_m | float | the grid cell Open-Meteo used | not `ok` |
 | wx_timezone | string | IANA zone of the venue | not `ok` |
 | wx_temp_max_c / wx_temp_min_c | float | °C, daily, at 2 m | not `ok` |
