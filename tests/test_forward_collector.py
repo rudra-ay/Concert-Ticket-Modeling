@@ -267,35 +267,78 @@ def test_token_bucket_never_exceeds_4_per_second(conn, clock):
     assert times[-1] >= (60 - 1) / 4 - 1e-6  # really throttled, not just lucky
 
 
-def test_rate_flag_cannot_exceed_4():
+def test_token_bucket_spacing_and_default_rate():
     clock = FakeClock()
-    b = fc.TokenBucket(fc.DEFAULT_RATE, clock)
+    b = fc.TokenBucket(4.0, clock)
     for _ in range(9):
         b.acquire()
     assert clock.t == pytest.approx(2.0)
+    assert fc.DEFAULT_RATE <= 3.0  # lowered after spike-arrest 429s at 4 req/s
 
 
-def test_429_honors_retry_after_then_succeeds(conn, clock):
+def test_rate_flag_is_capped(tmp_path, monkeypatch, clock):
+    monkeypatch.setenv("TICKETMASTER_API_KEY", KEY)
+    db = tmp_path / "x.sqlite"
+    fc.main(["--db", str(db), "watchlist", "add", "E1", "E2", "E3"], log_to_file=False)
+    t = FakeTransport(clock, AnyEvent())
+    assert fc.main(["--db", str(db), "--rate", "50", "run"], transport=t, clock=clock, log_to_file=False) == 0
+    gaps = [b[0] - a[0] for a, b in zip(t.calls, t.calls[1:])]
+    assert min(gaps) >= 1 / fc.DEFAULT_RATE - 1e-9
+
+
+def test_429_with_retry_after_stops_and_reports(conn, clock):
     r429 = fc.Response(429, {"Retry-After": "7"}, b'{"fault":{"faultstring":"Spike arrest violation"}}')
-    t = FakeTransport(clock, {"E1": [r429, r429, load("event_with_ranges.json")]})
-    seed(conn, clock, ["E1"])
-    stats = fc.run_snapshots(conn, make_client(conn, clock, t), clock)
-    assert stats.snapshots_saved == 1 and stats.stopped_reason is None
-    assert clock.sleeps.count(7.0) == 2
-    assert conn.execute("SELECT calls FROM api_calls").fetchone()[0] == 3  # retries count toward budget
-
-
-def test_429_without_retry_after_backs_off_exponentially_then_stops_for_day(conn, clock):
-    r429 = fc.Response(429, {}, b"{}")
-    t = FakeTransport(clock, {"E1": [r429], "E2": load("event_with_ranges.json")})
+    t = FakeTransport(clock, {"E1": [r429, load("event_with_ranges.json")], "E2": load("event_with_ranges.json")})
     seed(conn, clock, ["E1", "E2"])
-    conn.execute("UPDATE watchlist SET event_date='2026-11-01' WHERE event_id='E1'")
-    conn.execute("UPDATE watchlist SET event_date='2026-12-01' WHERE event_id='E2'")
+    client = make_client(conn, clock, t)
+    stats = fc.run_snapshots(conn, client, clock)
+    assert "Retry-After=7" in stats.stopped_reason and len(t.calls) == 1 and client.rate_limited
+    assert not clock.sleeps or max(clock.sleeps) < 1
+
+
+def test_rare_transient_429_is_retried_once(conn, clock):
+    ids = [f"E{i:03d}" for i in range(200)]
+    events = {i: load("event_with_ranges.json") for i in ids}
+    events["E050"] = [fc.Response(429, {}, b"{}"), load("event_with_ranges.json")]
+    t = FakeTransport(clock, events)
+    seed(conn, clock, ids)
+    client = make_client(conn, clock, t)
+    stats = fc.run_snapshots(conn, client, clock)
+    assert stats.snapshots_saved == 200 and stats.stopped_reason is None and not client.rate_limited
+    assert 2.0 in clock.sleeps
+
+
+def test_more_than_1pct_429s_stops(conn, clock):
+    ids = [f"E{i:03d}" for i in range(100)]
+    events = {i: load("event_with_ranges.json") for i in ids}
+    events["E010"] = [fc.Response(429, {}, b"{}"), load("event_with_ranges.json")]
+    events["E020"] = [fc.Response(429, {}, b"{}"), load("event_with_ranges.json")]
+    t = FakeTransport(clock, events)
+    seed(conn, clock, ids)
+    client = make_client(conn, clock, t)
+    stats = fc.run_snapshots(conn, client, clock)
+    assert "2 of" in stats.stopped_reason and client.rate_limited
+    assert stats.snapshots_saved == 20  # E000..E009, E010 after retry, E011..E019
+
+
+def test_429_persisting_through_retries_stops(conn, clock):
+    ids = [f"E{i:03d}" for i in range(500)]
+    events = {i: load("event_with_ranges.json") for i in ids}
+    events["E000"] = [fc.Response(429, {}, b"{}")]
+    t = FakeTransport(clock, events)
+    seed(conn, clock, ids)
     stats = fc.run_snapshots(conn, make_client(conn, clock, t), clock)
-    assert "429" in stats.stopped_reason
-    assert len(t.calls) == 1 + fc.MAX_RETRIES  # E2 never attempted
-    assert [s for s in clock.sleeps if s >= 1] == [2.0, 4.0, 8.0]
-    assert stats.remaining_todo == 2
+    assert "persisted" in stats.stopped_reason
+    assert len(t.calls) == 1 + fc.MAX_RETRIES and [x for x in clock.sleeps if x >= 1] == [2.0, 4.0, 8.0]
+    assert stats.remaining_todo == 500
+
+
+def test_rate_limit_stop_exit_code(tmp_path, monkeypatch, clock):
+    monkeypatch.setenv("TICKETMASTER_API_KEY", KEY)
+    db = tmp_path / "x.sqlite"
+    fc.main(["--db", str(db), "watchlist", "add", "E1"], log_to_file=False)
+    t = FakeTransport(clock, {"E1": fc.Response(429, {"Retry-After": "30"}, b"{}")})
+    assert fc.main(["--db", str(db), "daily"], transport=t, clock=clock, log_to_file=False) == fc.EXIT_RATE_LIMITED
 
 
 def test_429_quota_body_stops_immediately(conn, clock):
@@ -303,13 +346,6 @@ def test_429_quota_body_stops_immediately(conn, clock):
     seed(conn, clock, ["E1", "E2"])
     stats = fc.run_snapshots(conn, make_client(conn, clock, t), clock)
     assert "quota" in stats.stopped_reason and len(t.calls) == 1
-
-
-def test_long_retry_after_stops_for_day(conn, clock):
-    t = FakeTransport(clock, {"E1": fc.Response(429, {"Retry-After": "3600"}, b"{}")})
-    seed(conn, clock, ["E1"])
-    stats = fc.run_snapshots(conn, make_client(conn, clock, t), clock)
-    assert stats.stopped_reason and len(t.calls) == 1 and not any(s >= 60 for s in clock.sleeps)
 
 
 def test_retry_after_http_date():

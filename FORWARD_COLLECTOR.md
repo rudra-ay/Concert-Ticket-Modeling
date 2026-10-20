@@ -8,14 +8,49 @@ Source: SOURCES.md A6 (ALLOWED). Decisions: DECISIONS.md items 4 and 5, plus opt
 
 ## Status (2026-10-19)
 
-- **Collecting since 2026-10-19.** The key is in `.env`. The launchd job runs `daily` at 09:15 local time (§2).
-- STATUS_PLACEHOLDER
+- **Collecting since 2026-10-19.** The key is in `.env`. **The launchd job was installed on 2026-10-19 and bootstrapped without a kickstart.** The first scheduled `daily` is 2026-10-20 at 09:15 local time (§2).
+- First `daily` (2026-10-19, UTC day): **2,960 snapshots** saved, with 0 errors and 0 404s (plus 40 from the pilot run, for 3,000 events snapshotted that day). Event status: 2,808 onsale, 174 offsale, 18 rescheduled. **API calls that UTC day: 3,218** (pilot 100, full discover 152, daily 2,966).
+- Watchlist: **3,000 active** (2,061 ranges pool, 739 random without ranges, 200 pilot). 1,680 first observed ≥60 days out. 975 venues, 1,142 artists, 49 states.
+- Days to show at the start: 1–6: 271 · 7–13: 189 · 14–29: 463 · 30–44: 215 · 45–59: 182 · 60–89: 998 · 90–120: 682.
 
 ## Pilot result and option (b) (2026-10-19)
 
 The pilot found a **priceRanges fill rate below the 30% threshold**: 26.2% of search candidates and 15% of 40 detail responses. The full discover measured fill on the whole candidate pool of US music events. Regenerate this table with `.venv/bin/python forward_collector.py fill-report`.
 
-FILL_PLACEHOLDER
+Candidate pool on 2026-10-19: 24,095 US music events, 1–120 days out (Music segment; parking and add-ons excluded).
+
+| days out | events | fill % |
+|---|---|---|
+| 1-6 | 2,744 | 25.9 |
+| 7-13 | 2,561 | 26.0 |
+| 14-29 | 6,042 | 28.0 |
+| 30-44 | 4,048 | 28.0 |
+| 45-59 | 3,780 | 25.2 |
+| 60-89 | 2,641 | 27.8 |
+| 90-120 | 2,279 | 19.0 |
+| **>=45** | 8,700 | **24.3** |
+| **>=60** | 4,920 | **23.7** |
+
+| genre | events | fill % |
+|---|---|---|
+| Rock | 6,161 | 19.6 |
+| Other | 3,668 | 15.5 |
+| Country | 1,834 | 25.6 |
+| Jazz | 1,747 | 82.7 |
+| Pop | 1,573 | 19.6 |
+| Dance/Electronic | 1,434 | 22.6 |
+| Alternative | 1,238 | 60.6 |
+| Hip-Hop/Rap | 1,107 | 19.4 |
+| Undefined | 974 | 0.0 |
+| R&B | 925 | 20.5 |
+| Metal | 672 | 24.4 |
+| Classical | 556 | 0.7 |
+| Folk | 524 | 48.1 |
+| Blues | 431 | 30.6 |
+| Latin | 395 | 0.0 |
+| **all** | 24,095 | **26.2** |
+
+On the event detail endpoint (the first full `daily`, 2,960 snapshots), fill matched the selection: 100% for the 2,061 ranges-pool events, 0% for the 739 random no-ranges events, and 21% for the 200 pilot events. Every one of the 2,103 ranges was `standard`, USD, without fees. The detail and search endpoints agree.
 
 Fill for shows ≥45 days out (24.3%) is close to the pilot's 26.2%. The 90–120 day band is lower (19.0%), so ranges are often published later. **Missingness depends heavily on genre**, so an unweighted panel would be thin, and a ranges-only panel would be biased.
 
@@ -60,7 +95,7 @@ To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-co
 ### Check that it ran
 
 - `.venv/bin/python forward_collector.py status` shows today's snapshot count, today's API calls, and the last 5 runs. A run marked `UNFINISHED` crashed partway. A non-empty `stopped` field explains an early stop (budget, 429, or a bad key).
-- `launchctl print gui/$(id -u)/com.ticketpriceresearch.forward-collector | grep -E "last exit|runs"` should show `last exit code = 0`. Code 3 means no key; code 5 means Ticketmaster rejected the key.
+- `launchctl print gui/$(id -u)/com.ticketpriceresearch.forward-collector | grep -E "last exit|runs"` should show `last exit code = 0`. Code 3 means no key; code 5 means Ticketmaster rejected the key; **code 6 means the run stopped on HTTP 429 and must be reported before the next run** (see Limits).
 - Logs: `data/forward/logs/forward_collector-YYYY-MM.log` (the script's own log) and `launchd.out.log` / `launchd.err.log`.
 - A run that is rerun on the same UTC day only fetches what is missing, so running it by hand after a failure is always safe.
 
@@ -87,9 +122,9 @@ Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs
 
 ### Limits and safety
 
-- **Rate:** a token bucket at 4 req/s or slower, with no bursts. Ticketmaster allows 5.
+- **Rate:** a token bucket at **3 req/s** or slower, with no bursts (`--rate` can only lower it). Ticketmaster allows 5. The first full run at 4 req/s (2026-10-19) drew six spike-arrest 429s, each cleared by one 2 s retry, so the default was lowered. A 3,000-event run takes about 17 minutes.
 - **Daily budget:** 4,500 calls per UTC day by default (`--budget` or `TM_DAILY_BUDGET`; quota is 5,000). The budget counts every attempt, including retries, and persists across reruns. The run also stops early if Ticketmaster's `Rate-Limit-Available` header falls to 250.
-- **429:** honors `Retry-After` (seconds or an HTTP date), or otherwise backs off 2 s, 4 s, then 8 s. After 3 retries, if the wait exceeds 120 s, or if the body says the quota is used up, the run **stops for the day**. A 401 or 403 stops at once and is never retried. 5xx errors get 3 retries; an event that still fails is left unsaved, so a same-day rerun picks it up.
+- **429 policy (lead, 2026-10-19):** a rare transient 429 (spike arrest: no `Retry-After`, no quota body) gets one exponential backoff (2 s, then 4 s, then 8 s for the same call). The run **stops for the day, exits 6, and must be reported** if a 429 carries `Retry-After` or a quota body, if more than **1%** of the run's calls draw 429s, or if a call is still 429 after 3 retries. A 401 or 403 stops at once and is never retried (exit 5). 5xx errors get 3 retries; an event that still fails is left unsaved, so a same-day rerun picks it up.
 - **Idempotent:** one row per (event, UTC day), so a rerun the same day makes no calls for events already saved.
 - **Key hygiene:** the key comes only from the environment or `.env`. Every log line passes through a redaction filter, raw JSON has `apikey=` (and the literal key) stripped before it is compressed, and saved URLs never contain it. The tests check all three.
 - **Budget at steady state:** about 3,000 snapshot calls a day, plus about 700 discover calls once a week, which is under 4,500. Storage is about 3 KB of gzipped raw JSON per snapshot, so about 9 MB a day, or roughly 1–1.5 GB over 4–5 months.
@@ -132,4 +167,4 @@ Ticketmaster's terms allow storing Event Content only "for reasonable periods in
 .venv/bin/python -m pytest tests -q
 ```
 
-These cover parsing (including sparse events and the venue-timezone `days_until_show`), the missing-priceRanges case, same-day idempotency, 404 handling, cancelled and past events, key redaction (DB, raw JSON, logs, stdout), the no-key exit, the auth-error stop, the token bucket never exceeding 4 calls in any 1 s window, 429 handling with Retry-After, exponential backoff and the quota body, the persistent daily budget, the Rate-Limit-Available stop, discover paging and the deep-paging cap, the diversity caps and far-share, and the `daily` discover cadence. Fixtures are in `tests/fixtures/tm/`. They are hand-written in the documented Discovery v2 response shape, so the first real run should be checked against them (pilot step above).
+These cover parsing (including sparse events and the venue-timezone `days_until_show`), the missing-priceRanges case, same-day idempotency, 404 handling, cancelled and past events, key redaction (DB, raw JSON, logs, stdout), the no-key exit, the auth-error stop, the token bucket never exceeding 4 calls in any 1 s window and the 3 req/s cap, 429 handling with Retry-After, exponential backoff and the quota body, the persistent daily budget, the Rate-Limit-Available stop, discover paging and the deep-paging cap, the diversity caps and far-share, and the `daily` discover cadence. Fixtures are in `tests/fixtures/tm/`. They are hand-written in the documented Discovery v2 response shape, so the first real run should be checked against them (pilot step above).

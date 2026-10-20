@@ -53,15 +53,15 @@ USER_AGENT = "TicketPriceResearch/0.1 (personal research; contact: rudraayyagari
 
 DAILY_QUOTA = 5000
 DEFAULT_BUDGET = 4500          # 90% of the quota; the rest is safety margin
-DEFAULT_RATE = 4.0             # req/s, below TM's 5 req/s
+DEFAULT_RATE = 3.0             # req/s; 4 req/s drew occasional spike-arrest 429s on 2026-10-19 (TM allows 5)
 MAX_RETRIES = 3
-MAX_RETRY_WAIT_S = 120         # a Retry-After longer than this means "come back tomorrow"
 RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops to this
 DEEP_PAGING_CAP = 1000         # TM: size * page < 1000
 DISCOVER_EVERY_DAYS = 7
 DEACTIVATE_AFTER_404S = 3
 
-EXIT_OK, EXIT_NO_KEY, EXIT_AUTH = 0, 3, 5
+EXIT_OK, EXIT_NO_KEY, EXIT_AUTH, EXIT_RATE_LIMITED = 0, 3, 5, 6
+MAX_429_SHARE = 0.01           # more than 1% of a run's calls drawing 429 = stop and report
 
 log = logging.getLogger("forward_collector")
 
@@ -204,6 +204,10 @@ class AuthError(StopForToday):
     pass
 
 
+class RateLimitStop(StopForToday):
+    """A 429 we must not ride out: Retry-After or quota body, > 1% of calls, or retries exhausted."""
+
+
 def parse_retry_after(value: str | None, now: datetime) -> float | None:
     if not value:
         return None
@@ -260,6 +264,10 @@ class TMClient:
         self.bucket = TokenBucket(rate, clock)
         self.max_retries = max_retries
         self.last_available: int | None = None
+        self.calls = 0          # HTTP requests sent by this client (this process)
+        self.n429 = 0
+        self.planned = 0        # calls the current job expects to make; sets the 1% 429 threshold
+        self.rate_limited = False
 
     def _get(self, path: str, params: dict[str, Any]) -> Response:
         url = API_BASE + path
@@ -267,6 +275,7 @@ class TMClient:
             self.budget.spend()
             self.bucket.acquire()
             resp = self.transport.get(url, {**params, "apikey": self.key})
+            self.calls += 1
             avail = resp.header("Rate-Limit-Available")
             if avail and avail.strip().lstrip("-").isdigit():
                 self.last_available = int(avail)
@@ -278,16 +287,25 @@ class TMClient:
                 raise AuthError(f"Ticketmaster returned HTTP {resp.status}: the API key was rejected "
                                 "or access is forbidden. Check TICKETMASTER_API_KEY; not retrying.")
             if resp.status == 429:
+                self.n429 += 1
                 body = resp.body[:2000].decode("utf-8", "replace").lower()
+                retry_after = resp.header("Retry-After")
+                reason = None
                 if "quota" in body:
-                    raise StopForToday("Ticketmaster reports the daily quota is used up (429 quota)")
-                wait = parse_retry_after(resp.header("Retry-After"), self.clock.now())
-                if wait is None:
-                    wait = float(2 ** (attempt + 1))
-                if attempt == self.max_retries or wait > MAX_RETRY_WAIT_S:
-                    raise StopForToday(f"HTTP 429 after {attempt + 1} attempt(s) "
-                                       f"(Retry-After={resp.header('Retry-After')}); stopping for the day")
-                log.warning("429 on %s; waiting %.1fs (retry %d/%d)", path, wait, attempt + 1, self.max_retries)
+                    reason = "Ticketmaster reports the daily quota is used up (429 quota body)"
+                elif retry_after:
+                    reason = f"HTTP 429 with Retry-After={retry_after}"
+                elif self.n429 > MAX_429_SHARE * max(self.calls, self.planned):
+                    reason = f"HTTP 429 on {self.n429} of {self.calls} calls (> {MAX_429_SHARE:.0%} of the run)"
+                elif attempt == self.max_retries:
+                    reason = f"HTTP 429 persisted after {attempt + 1} attempts on {path}"
+                if reason:
+                    self.rate_limited = True
+                    raise RateLimitStop(f"{reason}; stopping for the day; report it")
+                # Transient spike arrest (no Retry-After, no quota body, rare): one exponential backoff.
+                wait = float(2 ** (attempt + 1))
+                log.warning("429 on %s; waiting %.1fs (retry %d/%d; %d/%d calls so far)", path, wait,
+                            attempt + 1, self.max_retries, self.n429, self.calls)
                 self.clock.sleep(wait)
                 continue
             if resp.status >= 500 and attempt < self.max_retries:
@@ -613,6 +631,7 @@ def run_snapshots(conn: sqlite3.Connection, client: TMClient, clock: Clock,
         todo = todo[:limit]
     log.info("run %s: %d events to snapshot, budget remaining %d", snap_date, len(todo),
              client.budget.remaining())
+    client.planned = max(client.planned, client.calls + len(todo))
     calls_before = client.budget.used()
     done = 0
     try:
@@ -921,6 +940,7 @@ def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: i
     run_id = _start_run(conn, "discover", clock)
     today = clock.now().date()
     calls_before = client.budget.used()
+    client.planned = max(client.planned, client.calls + max_calls)
     try:
         fetch_candidates(conn, client, clock, days_min, days_max, max_calls, max_pages_per_day)
     except StopForToday as exc:
@@ -1032,7 +1052,7 @@ def status(conn: sqlite3.Connection, clock: Clock) -> str:
         f"snapshots today: {q('SELECT COUNT(*) FROM snapshots WHERE snap_date=?', today)}",
         f"snapshots total: {q('SELECT COUNT(*) FROM snapshots')} over "
         f"{q('SELECT COUNT(DISTINCT snap_date) FROM snapshots')} day(s)",
-        f"priceRanges fill rate (all 200 snapshots): "
+        f"priceRanges fill rate (all HTTP-200 snapshots): "
         f"{q('SELECT ROUND(100.0*AVG(has_price_ranges),1) FROM snapshots WHERE http_status=200')}%",
         f"API calls today: {q('SELECT COALESCE(MAX(calls),0) FROM api_calls WHERE day=?', today)}",
         "last runs:",
@@ -1109,7 +1129,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")
     p.add_argument("--budget", type=int, default=int(os.environ.get("TM_DAILY_BUDGET", DEFAULT_BUDGET)),
                    help=f"max API calls per UTC day (default {DEFAULT_BUDGET}, quota is {DAILY_QUOTA})")
-    p.add_argument("--rate", type=float, default=DEFAULT_RATE, help="max requests/second (<= 4)")
+    p.add_argument("--rate", type=float, default=DEFAULT_RATE, help="max requests/second (capped at DEFAULT_RATE)")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="snapshot every active watchlist event once today")
     r.add_argument("--limit", type=int)
@@ -1143,6 +1163,10 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         print(NO_KEY_MESSAGE, file=sys.stderr)
         log.error("no TICKETMASTER_API_KEY; exiting without fetching")
         return EXIT_NO_KEY
+    if needs_key and transport is None:
+        # Campus DNS fails now and then (30 "network error" events on 2026-10-20): reuse the last good answer.
+        sys.path.insert(0, str(ROOT / "src"))
+        import sticky_dns  # noqa: F401
     rate = min(args.rate, DEFAULT_RATE)
     budget_limit = min(args.budget, DAILY_QUOTA)
 
@@ -1186,6 +1210,9 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         except AuthError as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_AUTH
+        if client.rate_limited:
+            print("stopped on HTTP 429 (see the log and `status`); report it before the next run", file=sys.stderr)
+            return EXIT_RATE_LIMITED
         return EXIT_OK
     finally:
         conn.close()

@@ -20,9 +20,13 @@ ROOT = Path(__file__).resolve().parents[1]
 PROBE_HOST = "www.wikidata.org"
 
 
-def log_tail(path: Path, n: int = 4000) -> str:
+def log_tail(path: Path, start: int, n: int = 4000) -> str:
+    """Last n chars written to path since byte offset start (this attempt only: the log is shared across
+    runs, so an older run's EXIT line must not decide how this one ended)."""
     try:
-        return path.read_text(errors="replace")[-n:]
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            return fh.read().decode(errors="replace")[-n:]
     except FileNotFoundError:
         return ""
 
@@ -42,10 +46,11 @@ def main() -> int:
     max_restarts = int(sys.argv[3]) if len(sys.argv) > 3 else 30
     for attempt in range(max_restarts + 1):
         print(f"{time.strftime('%H:%M:%S')} start {script} (attempt {attempt + 1})", flush=True)
+        start = log.stat().st_size if log.exists() else 0
         with open(log, "a") as fh:
             rc = subprocess.call([str(ROOT / ".venv/bin/python"), str(ROOT / "src" / script)],
                                  cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT)
-        tail = log_tail(log)
+        tail = log_tail(log, start)
         if rc == 0:
             print(f"{time.strftime('%H:%M:%S')} {script} finished OK", flush=True)
             return 0
