@@ -31,6 +31,13 @@ __pycache__/
 *.sqlite
 *.sqlite3
 *.db
+# SQLite WAL/journal sidecars (contain database pages) and the whole forward panel dir
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.db-wal
+*.db-shm
+data/forward/
 
 # OS / editor
 .DS_Store
