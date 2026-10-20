@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import socket
 import sys
 import time
 
@@ -33,6 +34,24 @@ from context_http import BlockedError, NetworkDown, TransientError, load_spine, 
 fw.QUOTA_PER_MIN, fw.QUOTA_PER_HOUR, fw.QUOTA_PER_DAY = 570, 4750, 9500  # read by QuotaLedger at call time
 BATCH_LOCATIONS = 10  # 20 stalled now and then; at 10, 5 s spacing still outpaces the 4,750/h quota
 REQUEST_DEADLINE_S = 60  # typical response 1-2 s; a stuck stream is abandoned and retried on a later pass
+
+# This Mac's DNS fails now and then (2026-10-20: "nodename nor servname" while the network was up), and each
+# failure cost a request slot plus backoff. Reuse the last good answer for a host when a lookup fails.
+_getaddrinfo, _last_good = socket.getaddrinfo, {}
+
+
+def _getaddrinfo_sticky(host, *args, **kw):
+    try:
+        res = _getaddrinfo(host, *args, **kw)
+    except socket.gaierror:
+        if (host, args) in _last_good:
+            return _last_good[(host, args)]
+        raise
+    _last_good[(host, args)] = res
+    return res
+
+
+socket.getaddrinfo = _getaddrinfo_sticky
 
 
 def plan(spine: pd.DataFrame, include_unpriced: bool, today: dt.date | None = None):

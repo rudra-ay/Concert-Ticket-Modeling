@@ -141,7 +141,9 @@ def polite_get(url: str, params: dict | None = None, timeout: int = 120, expect_
         except ValueError:
             # JSON that starts fine but breaks off is a cut-off stream (Open-Meteo appends
             # "Unexpected error while streaming data: timeoutReached"): a server hiccup, not pushback.
-            if low.lstrip().startswith((b"{", b"[")) and "json" in resp.headers.get("Content-Type", ""):
+            # The same message can also arrive alone, before any JSON was sent.
+            if "json" in resp.headers.get("Content-Type", "") and (
+                    low.lstrip().startswith((b"{", b"[")) or b"unexpected error while streaming data" in low):
                 saved = _save_bad_response(domain, resp, "truncated JSON stream", body)
                 raise TransientError(f"truncated JSON from {domain} (saved {saved.name})")
             # Non-empty, non-JSON page with a 2xx: possibly a challenge we don't recognise. Stop; a human looks.
