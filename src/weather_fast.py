@@ -70,6 +70,15 @@ def plan(spine: pd.DataFrame, include_unpriced: bool, today: dt.date | None = No
     return shows, last_available, segs
 
 
+def refund(ledger: fw.QuotaLedger, n: int) -> None:
+    """Undo the latest acquire(n) for a request that never reached the server."""
+    day = ledger._today()
+    if ledger.recent and ledger.recent[-1][1] == n:
+        ledger.recent.pop()
+    ledger.days[day] = max(0, ledger.days.get(day, 0) - n)
+    write_atomic(ledger.path, json.dumps(ledger.days).encode())
+
+
 def fetch(batch: pd.DataFrame, ledger: fw.QuotaLedger, state: dict) -> None:
     ledger.acquire(len(batch))
     params = {"latitude": ",".join(f"{x:.4f}" for x in batch.lat),
@@ -83,6 +92,8 @@ def fetch(batch: pd.DataFrame, ledger: fw.QuotaLedger, state: dict) -> None:
         print(f"  skip batch ({len(batch)}): {e}", flush=True)
         return
     except (requests.Timeout, requests.ConnectionError, TransientError) as e:
+        if isinstance(e, requests.ConnectionError):  # never reached Open-Meteo: give the calls back to the ledger
+            refund(ledger, len(batch))
         state["failures"] += 1
         print(f"  transient failure {state['failures']}/{fw.MAX_CONSECUTIVE_FAILURES}: "
               f"{type(e).__name__}: {str(e)[:160]}", flush=True)
@@ -101,11 +112,12 @@ def fetch(batch: pd.DataFrame, ledger: fw.QuotaLedger, state: dict) -> None:
     state["fetched"] += len(batch)
 
 
-def run_once(include_unpriced: bool) -> str | None:
+def run_once(include_unpriced: bool, state: dict) -> str | None:
     shows, last_available, segs = plan(load_spine(), include_unpriced)
     print(f"{len(segs)} venue-windows to fetch ({int(segs.priced.sum())} priced); "
           f"{BATCH_LOCATIONS} per request", flush=True)
-    ledger, state, stop_reason = fw.QuotaLedger(), {"failures": 0, "fetched": 0}, None
+    state.update(failures=0, fetched=0, todo=len(segs))
+    ledger, stop_reason = fw.QuotaLedger(), None
     try:
         for k in range(0, len(segs), BATCH_LOCATIONS):
             fetch(segs.iloc[k:k + BATCH_LOCATIONS], ledger, state)
@@ -129,15 +141,32 @@ def main() -> None:
         print(f"to fetch: {len(segs)} venue-windows = {len(segs)} API calls ({pri} priced, {len(segs) - pri} unpriced); "
               f"{-(-len(segs) // BATCH_LOCATIONS)} requests")
         return
+    retry_passes = 0
     while True:
-        stop_reason = run_once(include_unpriced)
+        state: dict = {}
+        stop_reason = run_once(include_unpriced, state)
         if stop_reason and stop_reason.startswith("BlockedError"):
             print("EXIT context_http.BlockedError", flush=True)
             raise SystemExit(2)
         if stop_reason and stop_reason.startswith("NetworkDown"):
             print("EXIT context_http.NetworkDown", flush=True)
             raise SystemExit(4)
-        if not ("--until-done" in sys.argv and stop_reason and stop_reason.startswith("QuotaExhausted")):
+        if stop_reason is None:
+            # Batches that failed (cut-off streams, timeouts) were skipped this pass. Retry them in a fresh pass
+            # instead of exiting 0, which the supervisor would record as "finished OK" with gaps. Stop after
+            # passes that fetch nothing new, so a batch Open-Meteo can never serve doesn't loop forever.
+            left = state["todo"] - state["fetched"]
+            if left == 0:
+                return
+            retry_passes = retry_passes + 1 if state["fetched"] == 0 else 0
+            if retry_passes >= 3:
+                print(f"{left} venue-windows still failing after 3 passes with no progress; giving up on them",
+                      flush=True)
+                return
+            print(f"{left} venue-windows failed this pass; retrying in 60 s", flush=True)
+            time.sleep(60)
+            continue
+        if not ("--until-done" in sys.argv and stop_reason.startswith("QuotaExhausted")):
             return
         now = dt.datetime.now(dt.timezone.utc)
         resume = dt.datetime.combine(now.date() + dt.timedelta(days=1), dt.time(0, 5), dt.timezone.utc)

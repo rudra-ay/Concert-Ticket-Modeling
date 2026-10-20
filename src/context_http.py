@@ -8,6 +8,7 @@ Rules enforced here (DECISIONS.md / lead brief):
 from __future__ import annotations
 
 import fcntl
+import http.cookiejar
 import json
 import os
 import time
@@ -36,6 +37,18 @@ class NetworkDown(RuntimeError):
 
 
 LOCKS = RAW / "_locks"
+_SESSIONS: dict[str, requests.Session] = {}
+
+
+def _session(domain: str) -> requests.Session:
+    """One keep-alive session per domain, cookies refused. A fresh TCP+TLS handshake per request was the step
+    that timed out (Open-Meteo, 2026-10-20: "Read timed out. (read timeout=10)" = the connect timeout)."""
+    if domain not in _SESSIONS:
+        sess = requests.Session()
+        sess.cookies.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))  # no cookie carry-over
+        sess.headers.update({"User-Agent": USER_AGENT})
+        _SESSIONS[domain] = sess
+    return _SESSIONS[domain]
 REQUEST_LOG = RAW / "_requests"
 BAD_RESPONSES = RAW / "_bad_responses"
 _CHALLENGE_MARKERS = (b"captcha", b"request rejected", b"access denied", b"challenge", b"cloudflare",
@@ -92,19 +105,19 @@ def polite_get(url: str, params: dict | None = None, timeout: int = 120, expect_
                    "end_to_start_s": f"{t0 - last_end:.2f}" if last_end else ""}
             resp, note, body = None, "", b""
             try:
-                with requests.Session() as sess:  # fresh session: no cookie carry-over
-                    sess.headers.update({"User-Agent": USER_AGENT})
-                    resp = sess.get(url, params=params, allow_redirects=True, stream=True,
-                                    timeout=(10, min(timeout, deadline)) if deadline else timeout)
-                    chunks = []
-                    for chunk in resp.iter_content(65536):
-                        chunks.append(chunk)
-                        if deadline and time.time() - t0 > deadline:
-                            resp.close()
-                            raise requests.Timeout(f"no complete response within {deadline:.0f} s")
-                    body = resp._content = b"".join(chunks)
+                sess = _session(domain)
+                resp = sess.get(url, params=params, allow_redirects=True, stream=True,
+                                timeout=(10, min(timeout, deadline)) if deadline else timeout)
+                chunks = []
+                for chunk in resp.iter_content(65536):
+                    chunks.append(chunk)
+                    if deadline and time.time() - t0 > deadline:
+                        resp.close()
+                        raise requests.Timeout(f"no complete response within {deadline:.0f} s")
+                body = resp._content = b"".join(chunks)
             except requests.RequestException as e:
                 note, body = type(e).__name__, b""
+                _SESSIONS.pop(domain, None)  # drop a possibly broken connection; the next call reconnects
                 raise
             finally:
                 t1 = time.time()
