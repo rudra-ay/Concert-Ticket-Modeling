@@ -14,6 +14,7 @@ from __future__ import annotations
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -32,14 +33,29 @@ def log_tail(path: Path, start: int, n: int = 4000) -> str:
         return ""
 
 
-def wait_for_dns(host: str) -> None:
-    while True:
+def resolves(host: str, timeout: float = 10) -> bool:
+    """getaddrinfo with a time limit: campus DNS sometimes hangs for minutes instead of failing.
+    The lookup runs in a daemon thread, so a hung one is abandoned rather than waited for."""
+    ok: list[bool] = []
+
+    def lookup() -> None:
         try:
             socket.getaddrinfo(host, 443)
-            return
+            ok.append(True)
         except OSError:
-            print(f"{time.strftime('%H:%M:%S')} DNS for {host} failing; retry in 60 s", flush=True)
-            time.sleep(60)
+            pass
+
+    t = threading.Thread(target=lookup, daemon=True)
+    t.start()
+    t.join(timeout)
+    return bool(ok)
+
+
+def wait_for_dns(host: str) -> None:
+    while not resolves(host):
+        print(f"{time.strftime('%H:%M:%S')} DNS for {host} failing; retry in 60 s", flush=True)
+        time.sleep(60)
+    print(f"{time.strftime('%H:%M:%S')} DNS for {host} OK", flush=True)
 
 
 def main() -> int:
