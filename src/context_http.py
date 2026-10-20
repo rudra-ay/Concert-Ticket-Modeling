@@ -7,6 +7,9 @@ Rules enforced here (DECISIONS.md / lead brief):
 """
 from __future__ import annotations
 
+import fcntl
+import json
+import os
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,36 +23,135 @@ INTERIM = ROOT / "data" / "interim"
 USER_AGENT = "TicketPriceResearch/0.1 (personal research; contact: rudraayyagari@gmail.com)"
 MIN_INTERVAL_S = 5.0
 
-_last_request: dict[str, float] = {}
-
-
 class BlockedError(RuntimeError):
-    """The server pushed back (403/429/challenge). Stop and report; never retry."""
+    """The server pushed back (403/429/challenge/unrecognised page). Stop and report; never retry."""
 
 
-def _wait_for_domain(domain: str) -> None:
-    last = _last_request.get(domain)
-    if last is not None:
-        gap = time.monotonic() - last
-        if gap < MIN_INTERVAL_S:
-            time.sleep(MIN_INTERVAL_S - gap)
-    _last_request[domain] = time.monotonic()
+class TransientError(RuntimeError):
+    """5xx or an empty body: log, skip, back off. Not pushback."""
 
 
-def polite_get(url: str, params: dict | None = None, timeout: int = 120) -> bytes:
-    """One GET under the collection rules: honest UA, no cookies, >= 5 s per domain, stop on pushback."""
+class NetworkDown(RuntimeError):
+    """Several transient failures in a row: stop; a supervisor restarts once the host resolves again."""
+
+
+LOCKS = RAW / "_locks"
+REQUEST_LOG = RAW / "_requests"
+BAD_RESPONSES = RAW / "_bad_responses"
+_CHALLENGE_MARKERS = (b"captcha", b"request rejected", b"access denied", b"challenge", b"cloudflare",
+                      b"too many requests", b"rate limit", b"attention required", b"just a moment")
+
+
+def _save_bad_response(domain: str, resp: requests.Response | None, note: str, body: bytes = b"") -> Path:
+    BAD_RESPONSES.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+    status = resp.status_code if resp is not None else "none"
+    path = BAD_RESPONSES / f"{domain}__{stamp}__{status}.txt"
+    head = {"note": note, "status": status, "url": resp.url if resp is not None else None,
+            "headers": dict(resp.headers) if resp is not None else {}}
+    path.write_bytes(json.dumps(head, indent=1).encode() + b"\n----- body (first 64 KB) -----\n" + body[:65536])
+    return path
+
+
+def _log_request(domain: str, row: dict) -> None:
+    REQUEST_LOG.mkdir(parents=True, exist_ok=True)
+    path = REQUEST_LOG / f"{domain}.csv"
+    new = not path.exists()
+    with open(path, "a") as f:
+        if new:
+            f.write("start_utc,end_utc,start_to_start_s,end_to_start_s,status,bytes,content_type,note\n")
+        f.write(",".join(str(row.get(k, "")) for k in
+                         ["start_utc", "end_utc", "start_to_start_s", "end_to_start_s", "status", "bytes",
+                          "content_type", "note"]) + "\n")
+
+
+def polite_get(url: str, params: dict | None = None, timeout: int = 120, expect_json: bool = False,
+               deadline: float | None = None) -> bytes:
+    """One GET under the collection rules.
+
+    - Cross-process lock per domain: one request in flight; the next starts >= MIN_INTERVAL_S after the previous
+      one ENDED (end-to-start), using the end time persisted in the lock file. Every request is logged.
+    - 403/429, or (expect_json) a non-empty non-JSON 2xx body, or a challenge page -> BlockedError (body saved).
+    - 5xx or an empty body -> TransientError (body saved). Other 4xx -> requests.HTTPError.
+    - deadline: cap on the whole download in seconds (`timeout` only bounds the gap between reads, so a
+      server trickling bytes can otherwise hold the request open for many minutes) -> requests.Timeout.
+    """
     domain = urlparse(url).netloc
-    _wait_for_domain(domain)
-    with requests.Session() as s:  # fresh session: no cookie carry-over
-        s.headers.update({"User-Agent": USER_AGENT})
-        resp = s.get(url, params=params, timeout=timeout, allow_redirects=True)
+    LOCKS.mkdir(parents=True, exist_ok=True)
+    with open(LOCKS / f"{domain}.lock", "a+") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            lk.seek(0)
+            prev = (lk.read().split() + ["0", "0"])[:2]
+            last_start, last_end = float(prev[0] or 0), float(prev[1] or 0)
+            wait = last_end + MIN_INTERVAL_S - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            t0 = time.time()
+            row = {"start_utc": _iso(t0), "start_to_start_s": f"{t0 - last_start:.2f}" if last_start else "",
+                   "end_to_start_s": f"{t0 - last_end:.2f}" if last_end else ""}
+            resp, note, body = None, "", b""
+            try:
+                with requests.Session() as sess:  # fresh session: no cookie carry-over
+                    sess.headers.update({"User-Agent": USER_AGENT})
+                    resp = sess.get(url, params=params, allow_redirects=True, stream=True,
+                                    timeout=(10, min(timeout, deadline)) if deadline else timeout)
+                    chunks = []
+                    for chunk in resp.iter_content(65536):
+                        chunks.append(chunk)
+                        if deadline and time.time() - t0 > deadline:
+                            resp.close()
+                            raise requests.Timeout(f"no complete response within {deadline:.0f} s")
+                    body = resp._content = b"".join(chunks)
+            except requests.RequestException as e:
+                note, body = type(e).__name__, b""
+                raise
+            finally:
+                t1 = time.time()
+                lk.seek(0); lk.truncate(); lk.write(f"{t0} {t1}"); lk.flush()
+                row.update(end_utc=_iso(t1), status=resp.status_code if resp is not None else "",
+                           bytes=len(body),
+                           content_type=(resp.headers.get("Content-Type", "") if resp is not None else "").replace(",", ";"),
+                           note=note)
+                _log_request(domain, row)
+                # watchdog audit format (same as features_common): start epoch, end epoch, pid; tab-separated
+                (RAW / "logs").mkdir(parents=True, exist_ok=True)
+                with open(RAW / "logs" / f"requests_{domain}.log", "a") as wl:
+                    wl.write(f"{t0:.3f}\t{t1:.3f}\t{os.getpid()}\n")
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
+
     if resp.status_code in (403, 429):
-        raise BlockedError(f"{resp.status_code} from {domain} for {url}; stopping, not retrying")
+        saved = _save_bad_response(domain, resp, "pushback", body)
+        raise BlockedError(f"{resp.status_code} from {domain}; stopping, not retrying (saved {saved.name})")
+    if resp.status_code >= 500:
+        saved = _save_bad_response(domain, resp, "5xx", body)
+        raise TransientError(f"{resp.status_code} from {domain} (saved {saved.name})")
     resp.raise_for_status()
-    head = resp.content[:2000].lower()
-    if b"captcha" in head or b"request rejected" in head or b"access denied" in head:
-        raise BlockedError(f"challenge/block page from {domain} for {url}; stopping")
-    return resp.content
+    low = body[:4000].lower()
+    if any(m in low for m in _CHALLENGE_MARKERS) and not low.lstrip().startswith((b"{", b"[")):
+        saved = _save_bad_response(domain, resp, "challenge markers", body)
+        raise BlockedError(f"challenge/block page from {domain}; stopping (saved {saved.name})")
+    if not body.strip():
+        saved = _save_bad_response(domain, resp, "empty body", body)
+        raise TransientError(f"empty body ({resp.status_code}) from {domain} (saved {saved.name})")
+    if expect_json:
+        try:
+            json.loads(body)
+        except ValueError:
+            # JSON that starts fine but breaks off is a cut-off stream (Open-Meteo appends
+            # "Unexpected error while streaming data: timeoutReached"): a server hiccup, not pushback.
+            if low.lstrip().startswith((b"{", b"[")) and "json" in resp.headers.get("Content-Type", ""):
+                saved = _save_bad_response(domain, resp, "truncated JSON stream", body)
+                raise TransientError(f"truncated JSON from {domain} (saved {saved.name})")
+            # Non-empty, non-JSON page with a 2xx: possibly a challenge we don't recognise. Stop; a human looks.
+            saved = _save_bad_response(domain, resp, "non-JSON 2xx", body)
+            raise BlockedError(f"non-JSON {resp.status_code} body from {domain}; stopping (saved {saved.name})")
+    return body
+
+
+def _iso(t: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{int((t % 1) * 1000):03d}Z"
 
 
 def write_atomic(path: Path, data: bytes) -> Path:
