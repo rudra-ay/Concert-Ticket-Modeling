@@ -1,0 +1,5 @@
+prev_event_status,event_status,n
+onsale,offsale,26
+offsale,onsale,18
+onsale,cancelled,6
+onsale,rescheduled,1

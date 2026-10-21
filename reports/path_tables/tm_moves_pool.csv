@@ -1,0 +1,4 @@
+pool,day_pairs,pairs_both_priced,moves,move_rate_pct,ci95_lo_pct,ci95_hi_pct,min_moves,max_moves,ranges_appeared,pairs_unpriced_before,ranges_disappeared,status_changes
+ranges pool,4114,3522,16,0.45,0.28,0.74,12,10,4,585,7,33
+random no-ranges draw,1477,0,0,,,,0,0,0,1477,0,6
+pilot (unweighted),399,80,1,1.25,0.22,6.75,0,1,0,318,1,12

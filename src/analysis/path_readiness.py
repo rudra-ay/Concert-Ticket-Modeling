@@ -333,6 +333,7 @@ def chart(curve: dict) -> str:
         ax.set_title(f"{h}-day paths", fontsize=11)
         ax.tick_params(axis="x", labelrotation=45, labelsize=7)
         ax.set_ylim(0, 2600)
+        ax.set_xlim(pd.Timestamp("2026-10-20"), pd.Timestamp("2027-04-30"))
     axes[0].set_ylabel("expected complete priced paths\n(cumulative)", color=INK2)
     axes[0].legend(fontsize=8, loc="upper left")
     fig.suptitle("Forward panel readiness: complete PRIMARY face-value paths by show date", x=0.01, ha="left",

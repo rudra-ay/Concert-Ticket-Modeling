@@ -1,0 +1,18 @@
+{
+  "panel": "data/forward/path_panel.parquet",
+  "entity": "event_id",
+  "artist": "artist",
+  "split": null,
+  "snapshot_time": "snapshot_time",
+  "show_time": "show_time",
+  "feature_time_cols": [],
+  "target_time_col": null,
+  "features": [],
+  "forbidden_features": [
+    "price_min",
+    "price_max",
+    "event_status",
+    "days_until_show"
+  ],
+  "note": "No model is fitted in task 8 (no out-of-sample claim). Before any walk-forward fit, features, split (time-ordered, grouped by artist) and target time are registered here."
+}

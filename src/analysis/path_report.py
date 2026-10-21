@@ -220,8 +220,9 @@ def main() -> None:
       "latency-bound, well under the 3 req/s cap), so a 4,000-event day takes about two hours.")
     w(f"- **What changed in selection:** only the target (4,000) and the far share (30% of new slots, was 60%). Option (b), "
       f"the 80% ranges pool and per-pick `selection_prob` are unchanged. The first top-up is the 2026-10-22 daily run "
-      f"(simulated: about {C['added_by_2026_10_22']:,} events that day). FORWARD_COLLECTOR.md documents the change, the "
-      "drift risk, and the IPW rule below.")
+      f"(simulated: about {C['added_by_2026_10_22']:,} events that day). Day-0 snapshots that don't fit under the cap that "
+      "day start on 2026-10-23, so a few simulated paths may start one day later than modeled. FORWARD_COLLECTOR.md "
+      "documents the change, the drift risk (a run more than about 3 h late truncates the next one), and the IPW rule below.")
     w("")
     w("**Effect on IPW** (Kish effective sample size of 1/selection_prob weights among expected complete paths by the "
       "milestone date; pilot events carry no weights and are excluded):")

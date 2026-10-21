@@ -1,0 +1,46 @@
+{
+  "generated": "2026-10-21",
+  "snap_days": [
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21"
+  ],
+  "n_snap_days": 3,
+  "snapshots_200": 9020,
+  "events": 3030,
+  "range_types": [
+    "standard / USD"
+  ],
+  "snapshots_with_ranges": 6324,
+  "zero_placeholder_snapshots": 893,
+  "day_pairs": 5990,
+  "pairs_both_priced": 3602,
+  "pairs_moved": 17,
+  "move_rate_pct": 0.47,
+  "move_rate_ci95_pct": [
+    0.29,
+    0.75
+  ],
+  "min_moves": 12,
+  "max_moves": 11,
+  "moves_up": 8,
+  "moves_down": 10,
+  "tiers_changed": 0,
+  "median_abs_pct_min_change": 23.4,
+  "median_abs_pct_max_change": 19.7,
+  "events_with_2plus_priced_days": 1806,
+  "events_moved": 17,
+  "event_move_rate_pct": 0.94,
+  "event_move_rate_ci95_pct": [
+    0.59,
+    1.5
+  ],
+  "ranges_appeared": 4,
+  "ranges_disappeared": 8,
+  "pairs_unpriced_before": 2380,
+  "status_changes": 51,
+  "charts": [
+    "charts/path_tm_moves_by_daysout.png",
+    "charts/path_tm_moves_by_genre.png"
+  ]
+}

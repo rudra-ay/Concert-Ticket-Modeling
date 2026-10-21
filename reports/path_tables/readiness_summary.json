@@ -1,0 +1,383 @@
+{
+  "today": "2026-10-21",
+  "p_miss_per_event_day": 0.0015,
+  "placeholder_share": 0.141,
+  "current_events": 3024,
+  "candidates_not_on_watchlist": 21302,
+  "candidate_max_date": "2027-02-18",
+  "scenarios": {
+    "A status quo (3,000, far 60%)": {
+      "target": 3000,
+      "far_share": 0.6,
+      "arrivals": true,
+      "added_events": 9335,
+      "added_synthetic": 7846,
+      "added_with_ranges": 4181,
+      "added_by_2026_10_22": 23,
+      "quota": {
+        "target": 3000,
+        "observed_overhead_max_pct": 1.25,
+        "retry_margin_pct": 3.0,
+        "observed_full_rescan_calls": 212,
+        "rescan_reserve": 250,
+        "worst_case_day_calls": 3340,
+        "budget": 4500,
+        "headroom": 1160,
+        "max_safe_target": 4126,
+        "back_to_back_second_run_calls_available": 1410,
+        "observed_calls_per_min": 36.0,
+        "est_run_minutes_observed_rate": 93
+      },
+      "dates": {
+        "h7_N200_all": "2026-11-02",
+        "h7_N200_priced": "2026-11-06",
+        "h7_N500_all": "2026-11-12",
+        "h7_N500_priced": "2026-11-19",
+        "h7_N1000_all": "2026-11-28",
+        "h7_N1000_priced": "2026-12-18",
+        "h14_N200_all": "2026-11-07",
+        "h14_N200_priced": "2026-11-13",
+        "h14_N500_all": "2026-11-18",
+        "h14_N500_priced": "2026-11-29",
+        "h14_N1000_all": "2026-12-11",
+        "h14_N1000_priced": "2026-12-26",
+        "h30_N200_all": "2026-11-29",
+        "h30_N200_priced": "2026-12-05",
+        "h30_N500_all": "2026-12-18",
+        "h30_N500_priced": "2026-12-22",
+        "h30_N1000_all": "2026-12-27",
+        "h30_N1000_priced": "2027-01-23",
+        "h60_N200_all": "2026-12-19",
+        "h60_N200_priced": "2026-12-22",
+        "h60_N500_all": "2026-12-27",
+        "h60_N500_priced": "2027-01-08",
+        "h60_N1000_all": "2027-01-16",
+        "h60_N1000_priced": "2027-02-19"
+      },
+      "ipw": {
+        "h7_by_2026-11-30": {
+          "n_expected": 915.9,
+          "kish_ess": 108.9,
+          "weight_cv": 2.742
+        },
+        "h14_by_2026-12-18": {
+          "n_expected": 1146.7,
+          "kish_ess": 152.6,
+          "weight_cv": 2.554
+        },
+        "h30_by_2027-01-15": {
+          "n_expected": 1488.0,
+          "kish_ess": 142.2,
+          "weight_cv": 3.077
+        },
+        "h60_by_2027-02-16": {
+          "n_expected": 1890.0,
+          "kish_ess": 254.4,
+          "weight_cv": 2.537
+        }
+      }
+    },
+    "B expand to 4,000 (far 60%)": {
+      "target": 4000,
+      "far_share": 0.6,
+      "arrivals": true,
+      "added_events": 13418,
+      "added_synthetic": 10555,
+      "added_with_ranges": 4676,
+      "added_by_2026_10_22": 1023,
+      "quota": {
+        "target": 4000,
+        "observed_overhead_max_pct": 1.25,
+        "retry_margin_pct": 3.0,
+        "observed_full_rescan_calls": 212,
+        "rescan_reserve": 250,
+        "worst_case_day_calls": 4370,
+        "budget": 4500,
+        "headroom": 130,
+        "max_safe_target": 4126,
+        "back_to_back_second_run_calls_available": 380,
+        "observed_calls_per_min": 36.0,
+        "est_run_minutes_observed_rate": 121
+      },
+      "dates": {
+        "h7_N200_all": "2026-10-31",
+        "h7_N200_priced": "2026-11-04",
+        "h7_N500_all": "2026-11-07",
+        "h7_N500_priced": "2026-11-13",
+        "h7_N1000_all": "2026-11-20",
+        "h7_N1000_priced": "2026-12-04",
+        "h14_N200_all": "2026-11-07",
+        "h14_N200_priced": "2026-11-10",
+        "h14_N500_all": "2026-11-14",
+        "h14_N500_priced": "2026-11-21",
+        "h14_N1000_all": "2026-11-29",
+        "h14_N1000_priced": "2026-12-18",
+        "h30_N200_all": "2026-11-27",
+        "h30_N200_priced": "2026-12-03",
+        "h30_N500_all": "2026-12-11",
+        "h30_N500_priced": "2026-12-19",
+        "h30_N1000_all": "2026-12-23",
+        "h30_N1000_priced": "2027-01-15",
+        "h60_N200_all": "2026-12-19",
+        "h60_N200_priced": "2026-12-22",
+        "h60_N500_all": "2026-12-26",
+        "h60_N500_priced": "2027-01-08",
+        "h60_N1000_all": "2027-01-08",
+        "h60_N1000_priced": "2027-02-19"
+      },
+      "ipw": {
+        "h7_by_2026-11-30": {
+          "n_expected": 1243.9,
+          "kish_ess": 187.6,
+          "weight_cv": 2.391
+        },
+        "h14_by_2026-12-18": {
+          "n_expected": 1513.6,
+          "kish_ess": 242.4,
+          "weight_cv": 2.291
+        },
+        "h30_by_2027-01-15": {
+          "n_expected": 1872.0,
+          "kish_ess": 184.0,
+          "weight_cv": 3.029
+        },
+        "h60_by_2027-02-16": {
+          "n_expected": 2560.0,
+          "kish_ess": 445.0,
+          "weight_cv": 2.18
+        }
+      }
+    },
+    "C expand to 4,000 (far 30%)": {
+      "target": 4000,
+      "far_share": 0.3,
+      "arrivals": true,
+      "added_events": 16771,
+      "added_synthetic": 11949,
+      "added_with_ranges": 5681,
+      "added_by_2026_10_22": 1023,
+      "quota": {
+        "target": 4000,
+        "observed_overhead_max_pct": 1.25,
+        "retry_margin_pct": 3.0,
+        "observed_full_rescan_calls": 212,
+        "rescan_reserve": 250,
+        "worst_case_day_calls": 4370,
+        "budget": 4500,
+        "headroom": 130,
+        "max_safe_target": 4126,
+        "back_to_back_second_run_calls_available": 380,
+        "observed_calls_per_min": 36.0,
+        "est_run_minutes_observed_rate": 121
+      },
+      "dates": {
+        "h7_N200_all": "2026-10-31",
+        "h7_N200_priced": "2026-11-03",
+        "h7_N500_all": "2026-11-06",
+        "h7_N500_priced": "2026-11-12",
+        "h7_N1000_all": "2026-11-14",
+        "h7_N1000_priced": "2026-11-22",
+        "h14_N200_all": "2026-11-06",
+        "h14_N200_priced": "2026-11-08",
+        "h14_N500_all": "2026-11-13",
+        "h14_N500_priced": "2026-11-16",
+        "h14_N1000_all": "2026-11-21",
+        "h14_N1000_priced": "2026-12-04",
+        "h30_N200_all": "2026-11-27",
+        "h30_N200_priced": "2026-11-29",
+        "h30_N500_all": "2026-12-06",
+        "h30_N500_priced": "2026-12-15",
+        "h30_N1000_all": "2026-12-19",
+        "h30_N1000_priced": "2027-01-02",
+        "h60_N200_all": "2026-12-19",
+        "h60_N200_priced": "2026-12-22",
+        "h60_N500_all": "2026-12-26",
+        "h60_N500_priced": "2027-01-08",
+        "h60_N1000_all": "2027-01-14",
+        "h60_N1000_priced": "2027-02-19"
+      },
+      "ipw": {
+        "h7_by_2026-11-30": {
+          "n_expected": 1736.0,
+          "kish_ess": 280.7,
+          "weight_cv": 2.294
+        },
+        "h14_by_2026-12-18": {
+          "n_expected": 2283.5,
+          "kish_ess": 395.6,
+          "weight_cv": 2.185
+        },
+        "h30_by_2027-01-15": {
+          "n_expected": 2002.0,
+          "kish_ess": 273.7,
+          "weight_cv": 2.513
+        },
+        "h60_by_2027-02-16": {
+          "n_expected": 2100.0,
+          "kish_ess": 275.5,
+          "weight_cv": 2.574
+        }
+      }
+    },
+    "A0 status quo, known pool only": {
+      "target": 3000,
+      "far_share": 0.6,
+      "arrivals": false,
+      "added_events": 3272,
+      "added_synthetic": 0,
+      "added_with_ranges": 626,
+      "added_by_2026_10_22": 23,
+      "quota": {
+        "target": 3000,
+        "observed_overhead_max_pct": 1.25,
+        "retry_margin_pct": 3.0,
+        "observed_full_rescan_calls": 212,
+        "rescan_reserve": 250,
+        "worst_case_day_calls": 3340,
+        "budget": 4500,
+        "headroom": 1160,
+        "max_safe_target": 4126,
+        "back_to_back_second_run_calls_available": 1410,
+        "observed_calls_per_min": 36.0,
+        "est_run_minutes_observed_rate": 93
+      },
+      "dates": {
+        "h7_N200_all": "2026-11-02",
+        "h7_N200_priced": "2026-11-06",
+        "h7_N500_all": "2026-11-12",
+        "h7_N500_priced": "2026-11-19",
+        "h7_N1000_all": "2026-11-28",
+        "h7_N1000_priced": "2026-12-18",
+        "h14_N200_all": "2026-11-07",
+        "h14_N200_priced": "2026-11-13",
+        "h14_N500_all": "2026-11-18",
+        "h14_N500_priced": "2026-11-29",
+        "h14_N1000_all": "2026-12-11",
+        "h14_N1000_priced": "2026-12-25",
+        "h30_N200_all": "2026-11-29",
+        "h30_N200_priced": "2026-12-06",
+        "h30_N500_all": "2026-12-18",
+        "h30_N500_priced": "2026-12-22",
+        "h30_N1000_all": "2026-12-27",
+        "h30_N1000_priced": "2027-01-23",
+        "h60_N200_all": "2026-12-19",
+        "h60_N200_priced": "2026-12-22",
+        "h60_N500_all": "2026-12-27",
+        "h60_N500_priced": "2027-01-08",
+        "h60_N1000_all": "2027-01-14",
+        "h60_N1000_priced": "after 2027-06-30"
+      },
+      "ipw": {
+        "h7_by_2026-11-30": {
+          "n_expected": 919.9,
+          "kish_ess": 128.1,
+          "weight_cv": 2.505
+        },
+        "h14_by_2026-12-18": {
+          "n_expected": 1153.7,
+          "kish_ess": 161.8,
+          "weight_cv": 2.477
+        },
+        "h30_by_2027-01-15": {
+          "n_expected": 1569.0,
+          "kish_ess": 155.7,
+          "weight_cv": 3.014
+        },
+        "h60_by_2027-02-16": {
+          "n_expected": 2773.0,
+          "kish_ess": 639.8,
+          "weight_cv": 1.826
+        }
+      }
+    },
+    "B0 expand to 4,000, known pool only": {
+      "target": 4000,
+      "far_share": 0.6,
+      "arrivals": false,
+      "added_events": 4382,
+      "added_synthetic": 0,
+      "added_with_ranges": 1168,
+      "added_by_2026_10_22": 1023,
+      "quota": {
+        "target": 4000,
+        "observed_overhead_max_pct": 1.25,
+        "retry_margin_pct": 3.0,
+        "observed_full_rescan_calls": 212,
+        "rescan_reserve": 250,
+        "worst_case_day_calls": 4370,
+        "budget": 4500,
+        "headroom": 130,
+        "max_safe_target": 4126,
+        "back_to_back_second_run_calls_available": 380,
+        "observed_calls_per_min": 36.0,
+        "est_run_minutes_observed_rate": 121
+      },
+      "dates": {
+        "h7_N200_all": "2026-10-31",
+        "h7_N200_priced": "2026-11-05",
+        "h7_N500_all": "2026-11-07",
+        "h7_N500_priced": "2026-11-14",
+        "h7_N1000_all": "2026-11-20",
+        "h7_N1000_priced": "2026-12-04",
+        "h14_N200_all": "2026-11-07",
+        "h14_N200_priced": "2026-11-10",
+        "h14_N500_all": "2026-11-14",
+        "h14_N500_priced": "2026-11-21",
+        "h14_N1000_all": "2026-11-29",
+        "h14_N1000_priced": "2026-12-18",
+        "h30_N200_all": "2026-11-27",
+        "h30_N200_priced": "2026-12-04",
+        "h30_N500_all": "2026-12-11",
+        "h30_N500_priced": "2026-12-19",
+        "h30_N1000_all": "2026-12-22",
+        "h30_N1000_priced": "2027-01-16",
+        "h60_N200_all": "2026-12-19",
+        "h60_N200_priced": "2026-12-22",
+        "h60_N500_all": "2026-12-26",
+        "h60_N500_priced": "2027-01-08",
+        "h60_N1000_all": "2027-01-07",
+        "h60_N1000_priced": "after 2027-06-30"
+      },
+      "ipw": {
+        "h7_by_2026-11-30": {
+          "n_expected": 1235.1,
+          "kish_ess": 182.8,
+          "weight_cv": 2.417
+        },
+        "h14_by_2026-12-18": {
+          "n_expected": 1531.6,
+          "kish_ess": 243.1,
+          "weight_cv": 2.303
+        },
+        "h30_by_2027-01-15": {
+          "n_expected": 1965.0,
+          "kish_ess": 207.4,
+          "weight_cv": 2.912
+        },
+        "h60_by_2027-02-16": {
+          "n_expected": 3497.0,
+          "kish_ess": 904.2,
+          "weight_cv": 1.694
+        }
+      }
+    }
+  },
+  "arrivals_per_day": 74.5,
+  "arrival_template_ranges_share": 0.189,
+  "allowed_misses": {
+    "7": 0,
+    "14": 1,
+    "30": 3,
+    "60": 6
+  },
+  "p_complete_fresh": {
+    "7": 0.988,
+    "14": 1.0,
+    "30": 1.0,
+    "60": 1.0
+  },
+  "outage_one_day_h7_paths_lost_nov_mean": 174.2,
+  "outage_one_day_h7_priced_paths_lost_nov_mean": 113.7,
+  "first_budget_stop_calls": 1563,
+  "chart": "charts/path_readiness.png"
+}

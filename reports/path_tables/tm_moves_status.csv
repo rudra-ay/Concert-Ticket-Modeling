@@ -1,0 +1,4 @@
+status_g,day_pairs,pairs_both_priced,moves,move_rate_pct,ci95_lo_pct,ci95_hi_pct,min_moves,max_moves,ranges_appeared,pairs_unpriced_before,ranges_disappeared,status_changes
+offsale,345,281,1,0.36,0.06,1.99,1,1,0,61,3,18
+onsale,5608,3321,16,0.48,0.3,0.78,11,10,4,2282,5,33
+rescheduled,37,0,0,,,,0,0,0,37,0,0

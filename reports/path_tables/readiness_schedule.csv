@@ -1,0 +1,121 @@
+scenario,horizon_days,N,paths,date
+"A status quo (3,000, far 60%)",7,200,all,2026-11-02
+"A status quo (3,000, far 60%)",7,200,priced,2026-11-06
+"A status quo (3,000, far 60%)",7,500,all,2026-11-12
+"A status quo (3,000, far 60%)",7,500,priced,2026-11-19
+"A status quo (3,000, far 60%)",7,1000,all,2026-11-28
+"A status quo (3,000, far 60%)",7,1000,priced,2026-12-18
+"A status quo (3,000, far 60%)",14,200,all,2026-11-07
+"A status quo (3,000, far 60%)",14,200,priced,2026-11-13
+"A status quo (3,000, far 60%)",14,500,all,2026-11-18
+"A status quo (3,000, far 60%)",14,500,priced,2026-11-29
+"A status quo (3,000, far 60%)",14,1000,all,2026-12-11
+"A status quo (3,000, far 60%)",14,1000,priced,2026-12-26
+"A status quo (3,000, far 60%)",30,200,all,2026-11-29
+"A status quo (3,000, far 60%)",30,200,priced,2026-12-05
+"A status quo (3,000, far 60%)",30,500,all,2026-12-18
+"A status quo (3,000, far 60%)",30,500,priced,2026-12-22
+"A status quo (3,000, far 60%)",30,1000,all,2026-12-27
+"A status quo (3,000, far 60%)",30,1000,priced,2027-01-23
+"A status quo (3,000, far 60%)",60,200,all,2026-12-19
+"A status quo (3,000, far 60%)",60,200,priced,2026-12-22
+"A status quo (3,000, far 60%)",60,500,all,2026-12-27
+"A status quo (3,000, far 60%)",60,500,priced,2027-01-08
+"A status quo (3,000, far 60%)",60,1000,all,2027-01-16
+"A status quo (3,000, far 60%)",60,1000,priced,2027-02-19
+"B expand to 4,000 (far 60%)",7,200,all,2026-10-31
+"B expand to 4,000 (far 60%)",7,200,priced,2026-11-04
+"B expand to 4,000 (far 60%)",7,500,all,2026-11-07
+"B expand to 4,000 (far 60%)",7,500,priced,2026-11-13
+"B expand to 4,000 (far 60%)",7,1000,all,2026-11-20
+"B expand to 4,000 (far 60%)",7,1000,priced,2026-12-04
+"B expand to 4,000 (far 60%)",14,200,all,2026-11-07
+"B expand to 4,000 (far 60%)",14,200,priced,2026-11-10
+"B expand to 4,000 (far 60%)",14,500,all,2026-11-14
+"B expand to 4,000 (far 60%)",14,500,priced,2026-11-21
+"B expand to 4,000 (far 60%)",14,1000,all,2026-11-29
+"B expand to 4,000 (far 60%)",14,1000,priced,2026-12-18
+"B expand to 4,000 (far 60%)",30,200,all,2026-11-27
+"B expand to 4,000 (far 60%)",30,200,priced,2026-12-03
+"B expand to 4,000 (far 60%)",30,500,all,2026-12-11
+"B expand to 4,000 (far 60%)",30,500,priced,2026-12-19
+"B expand to 4,000 (far 60%)",30,1000,all,2026-12-23
+"B expand to 4,000 (far 60%)",30,1000,priced,2027-01-15
+"B expand to 4,000 (far 60%)",60,200,all,2026-12-19
+"B expand to 4,000 (far 60%)",60,200,priced,2026-12-22
+"B expand to 4,000 (far 60%)",60,500,all,2026-12-26
+"B expand to 4,000 (far 60%)",60,500,priced,2027-01-08
+"B expand to 4,000 (far 60%)",60,1000,all,2027-01-08
+"B expand to 4,000 (far 60%)",60,1000,priced,2027-02-19
+"C expand to 4,000 (far 30%)",7,200,all,2026-10-31
+"C expand to 4,000 (far 30%)",7,200,priced,2026-11-03
+"C expand to 4,000 (far 30%)",7,500,all,2026-11-06
+"C expand to 4,000 (far 30%)",7,500,priced,2026-11-12
+"C expand to 4,000 (far 30%)",7,1000,all,2026-11-14
+"C expand to 4,000 (far 30%)",7,1000,priced,2026-11-22
+"C expand to 4,000 (far 30%)",14,200,all,2026-11-06
+"C expand to 4,000 (far 30%)",14,200,priced,2026-11-08
+"C expand to 4,000 (far 30%)",14,500,all,2026-11-13
+"C expand to 4,000 (far 30%)",14,500,priced,2026-11-16
+"C expand to 4,000 (far 30%)",14,1000,all,2026-11-21
+"C expand to 4,000 (far 30%)",14,1000,priced,2026-12-04
+"C expand to 4,000 (far 30%)",30,200,all,2026-11-27
+"C expand to 4,000 (far 30%)",30,200,priced,2026-11-29
+"C expand to 4,000 (far 30%)",30,500,all,2026-12-06
+"C expand to 4,000 (far 30%)",30,500,priced,2026-12-15
+"C expand to 4,000 (far 30%)",30,1000,all,2026-12-19
+"C expand to 4,000 (far 30%)",30,1000,priced,2027-01-02
+"C expand to 4,000 (far 30%)",60,200,all,2026-12-19
+"C expand to 4,000 (far 30%)",60,200,priced,2026-12-22
+"C expand to 4,000 (far 30%)",60,500,all,2026-12-26
+"C expand to 4,000 (far 30%)",60,500,priced,2027-01-08
+"C expand to 4,000 (far 30%)",60,1000,all,2027-01-14
+"C expand to 4,000 (far 30%)",60,1000,priced,2027-02-19
+"A0 status quo, known pool only",7,200,all,2026-11-02
+"A0 status quo, known pool only",7,200,priced,2026-11-06
+"A0 status quo, known pool only",7,500,all,2026-11-12
+"A0 status quo, known pool only",7,500,priced,2026-11-19
+"A0 status quo, known pool only",7,1000,all,2026-11-28
+"A0 status quo, known pool only",7,1000,priced,2026-12-18
+"A0 status quo, known pool only",14,200,all,2026-11-07
+"A0 status quo, known pool only",14,200,priced,2026-11-13
+"A0 status quo, known pool only",14,500,all,2026-11-18
+"A0 status quo, known pool only",14,500,priced,2026-11-29
+"A0 status quo, known pool only",14,1000,all,2026-12-11
+"A0 status quo, known pool only",14,1000,priced,2026-12-25
+"A0 status quo, known pool only",30,200,all,2026-11-29
+"A0 status quo, known pool only",30,200,priced,2026-12-06
+"A0 status quo, known pool only",30,500,all,2026-12-18
+"A0 status quo, known pool only",30,500,priced,2026-12-22
+"A0 status quo, known pool only",30,1000,all,2026-12-27
+"A0 status quo, known pool only",30,1000,priced,2027-01-23
+"A0 status quo, known pool only",60,200,all,2026-12-19
+"A0 status quo, known pool only",60,200,priced,2026-12-22
+"A0 status quo, known pool only",60,500,all,2026-12-27
+"A0 status quo, known pool only",60,500,priced,2027-01-08
+"A0 status quo, known pool only",60,1000,all,2027-01-14
+"A0 status quo, known pool only",60,1000,priced,after 2027-06-30
+"B0 expand to 4,000, known pool only",7,200,all,2026-10-31
+"B0 expand to 4,000, known pool only",7,200,priced,2026-11-05
+"B0 expand to 4,000, known pool only",7,500,all,2026-11-07
+"B0 expand to 4,000, known pool only",7,500,priced,2026-11-14
+"B0 expand to 4,000, known pool only",7,1000,all,2026-11-20
+"B0 expand to 4,000, known pool only",7,1000,priced,2026-12-04
+"B0 expand to 4,000, known pool only",14,200,all,2026-11-07
+"B0 expand to 4,000, known pool only",14,200,priced,2026-11-10
+"B0 expand to 4,000, known pool only",14,500,all,2026-11-14
+"B0 expand to 4,000, known pool only",14,500,priced,2026-11-21
+"B0 expand to 4,000, known pool only",14,1000,all,2026-11-29
+"B0 expand to 4,000, known pool only",14,1000,priced,2026-12-18
+"B0 expand to 4,000, known pool only",30,200,all,2026-11-27
+"B0 expand to 4,000, known pool only",30,200,priced,2026-12-04
+"B0 expand to 4,000, known pool only",30,500,all,2026-12-11
+"B0 expand to 4,000, known pool only",30,500,priced,2026-12-19
+"B0 expand to 4,000, known pool only",30,1000,all,2026-12-22
+"B0 expand to 4,000, known pool only",30,1000,priced,2027-01-16
+"B0 expand to 4,000, known pool only",60,200,all,2026-12-19
+"B0 expand to 4,000, known pool only",60,200,priced,2026-12-22
+"B0 expand to 4,000, known pool only",60,500,all,2026-12-26
+"B0 expand to 4,000, known pool only",60,500,priced,2027-01-08
+"B0 expand to 4,000, known pool only",60,1000,all,2027-01-07
+"B0 expand to 4,000, known pool only",60,1000,priced,after 2027-06-30

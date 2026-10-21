@@ -193,12 +193,65 @@ Hypotheses are tagged **(LEVEL)** or **(PATH)** and numbered globally (H1, H2, �
 
 ---
 
+## C. PATH, added for task 8: what predicts the shape of a price path
+
+Added 2026-10-21 by collector-prices. Citations come from bibliographic records or publisher and author pages found by web search on that date; I did not read the full texts unless marked. Numbers appear only where the abstract states them.
+
+### 26. Gallego & van Ryzin (1994), optimal dynamic pricing over a finite horizon [V-abstract]
+- **Citation:** Gallego, G. & van Ryzin, G. (1994). "Optimal Dynamic Pricing of Inventories with Stochastic Demand over Finite Horizons." *Management Science* 40(8): 999–1020. doi:10.1287/mnsc.40.8.999. Author PDF: https://business.columbia.edu/sites/default/files-efs/pubfiles/3943/vanryzin_optimal_dynamic_pricing.pdf
+- **Content:** a seller with fixed stock and a deadline facing price-sensitive stochastic demand. The paper proves monotonicity of the optimal price in stock level and time remaining, and shows fixed-price policies are asymptotically optimal as volume grows.
+- **For PATH:** the theoretical anchor for "the path depends on remaining inventory relative to remaining time". A seller long on inventory late in the horizon cuts prices; scarce inventory holds prices up. This supports H2/H5 (sell-through as the moderator) and the face-value side of H20.
+
+### 27. Board & Skrzypacz (2016), revenue management with forward-looking buyers [V-abstract]
+- **Citation:** Board, S. & Skrzypacz, A. (2016). "Revenue Management with Forward-Looking Buyers." *Journal of Political Economy* 124(4): 1046–1087. doi:10.1086/686713.
+- **Content:** units sold before a deadline to buyers who arrive over time and can time their purchases. The optimal allocation uses cutoffs that depend only on inventory and time remaining, implementable with posted prices. The 2011 working-paper version states that the cutoffs fall over time and with inventory [V-secondary for that detail].
+- **For PATH:** declining paths are optimal even with strategic buyers, so a late rise needs something else: scarcity (sell-outs, H4/H5) or late high-value arrivals (H10).
+
+### 28. Williams (2022), welfare effects of dynamic pricing in airlines [V-abstract]
+- **Citation:** Williams, K. R. (2022). "The Welfare Effects of Dynamic Pricing: Evidence from Airline Markets." *Econometrica* 90(2): 831–858. doi:10.3982/ECTA16180.
+- **Content:** separates fare changes caused by demand shocks from those caused by a shifting mix of buyers (willingness to pay rises as departure nears). Dynamic pricing benefits early leisure buyers and charges late business buyers more.
+- **For PATH:** the closest empirical analog for a *rising* late path. If late concert demand is less price-elastic (Courty 2003, H10), late prices can rise. The path then depends on the timing mix of buyers as well as inventory.
+
+### 29. Xu, Fader & Veeraraghavan (2019), dynamic pricing for MLB single-game tickets [V-abstract]
+- **Citation:** Xu, J. J., Fader, P. S. & Veeraraghavan, S. (2019). "Designing and Evaluating Dynamic Pricing Policies for Major League Baseball Tickets." *Manufacturing & Service Operations Management* 21(1): 121–138. doi:10.1287/msom.2018.0760.
+- **Content:** a demand model of quantity and seat-section choice for one franchise's primary tickets. The abstract reports that daily re-optimization would raise revenue by about 17.2%, close to a clairvoyant policy. Customer arrival timing is related to the seat chosen.
+- **For PATH:** primary sellers *can* gain from daily repricing. Whether Ticketmaster concert face values actually move daily is an empirical question the forward panel answers (H20). Seat section and arrival timing interact, so paths should be studied by tier where tiers exist (H36).
+
+### 30. Diehl, Maxcy & Drayer (2015), secondary-market price elasticity in the NFL [V-abstract]
+- **Citation:** Diehl, M. A., Maxcy, J. G. & Drayer, J. (2015). "Price Elasticity of Demand in the Secondary Market: Evidence from the National Football League." *Journal of Sports Economics* 16(6): 557–575.
+- **Content:** using secondary-market transactions with IV, demand is elastic (unlike most primary-market estimates), and elasticity differs by seat quality.
+- **For PATH:** resale price paths should differ by seat tier (H36), and secondary sellers face elastic demand, which fits Sweeting's declining paths for most events.
+
+### 31. Waisman (working paper, 2017 seminar version), auctions vs. posted prices for NFL tickets on eBay [V-abstract via seminar listings; publication venue UNVERIFIED]
+- Updates item 9. The UCL (2017-10-24) and Kellogg (2017-11-02) seminar abstracts describe a structural model of forward-looking eBay sellers choosing auctions or posted prices for NFL tickets. In the counterfactuals, removing auctions cuts sellers' expected payoffs by 20% to 90%.
+- **For PATH:** the selling mechanism and seller dynamics are part of the path; relevant to H18 only if listing-format data exist.
+
+### 32. Kemper & Breuer (2016), dynamic pricing for Bayern Munich [V-abstract; findings UNVERIFIED]
+- **Citation:** Kemper, C. & Breuer, C. (2016). "How Efficient is Dynamic Pricing for Sport Events? Designing a Dynamic Pricing Model for Bayern Munich." *International Journal of Sport Finance* 11(1): 4–15.
+- **Content:** a Bernoulli-type dynamic pricing model with demand estimated from ebay.de ticket auctions (2013/14 season), evaluated by Monte Carlo simulation. I did not verify its efficiency conclusion.
+
+### Synthesis: predictors of path shape named in the literature
+
+| predictor | expected effect on the late path | sources | testable here? |
+|---|---|---|---|
+| Remaining inventory relative to time (primary sell-out, listings vs. demand) | long inventory → decline; scarcity → flat or rising | Sweeting 2012; Leslie & Sorensen 2014; Gallego & van Ryzin 1994; Board & Skrzypacz 2016 | resale data needed (H2, H5) |
+| Timing mix of buyers (late, high-value demand) | more late high-value demand → late rise | Courty 2003; Williams 2022 | resale data needed (H10) |
+| Seller type (brokers vs. individuals holding one set) | individual sellers cut harder as opportunity cost falls | Sweeting 2012; Leslie & Sorensen 2014 | resale listing data needed (H3) |
+| Seat quality tier | elasticity and markups differ by tier | Diehl, Maxcy & Drayer 2015; Leslie & Sorensen 2014; Xu et al. 2019 | partly: primary tiers via price_min/price_max (H36 resale side excluded) |
+| Primary pricing regime (tier releases, platinum, auctions) | smaller resale premiums and flatter resale paths; primary steps at release dates | Bhave & Budish 2023; CMA 2025; Xu et al. 2019 | primary side yes (H20, H9p, H37) |
+| Late resolution of demand uncertainty | rising late variance | Cui, Duenyas & Sahin 2014 | resale data needed (H17) |
+| Event-specific shocks (weather, line-up news) | discrete level shifts | Shapiro & Drayer 2014 | resale data needed (H12) |
+
+- **Hypotheses:**
+  - **H36 (PATH):** late resale paths differ by seat tier. Premium tiers decline less (or rise) for high-demand shows, and cheap tiers decline more. Needs resale data with section or tier.
+  - **H37 (PATH, primary):** Ticketmaster primary face-value changes concentrate around scheduled sale-phase dates (public on-sale start and presale windows) rather than spreading evenly over days to show. Testable on the forward panel because the sale dates are recorded as-of in each snapshot.
+
 ## Consolidated hypothesis list (for the analysis plan)
 
 **LEVEL:** H6, H8, H15, H16, H19, H22, H23, H24, H25, H26, H27, H28, H29, H30, H31, H32, H33, H34.
-**PATH:** H1, H2, H3, H4, H5, H7, H9, H10, H11, H12, H13, H14, H17, H18, H20, H21, H35.
+**PATH:** H1, H2, H3, H4, H5, H7, H9, H10, H11, H12, H13, H14, H17, H18, H20, H21, H35, H36, H37.
 
 **Directly competing PATH predictions to test head-to-head:** monotone decline to the end (H1, H21; Sweeting/MLB, StubHub newsroom) vs. a late rise for sold-out concerts (H4/H5; Leslie & Sorensen) vs. a peak at T-9 to T-10 days then a fall (H13; Chan et al. via Tompkins). The moderator to test is primary sell-out status and demand relative to capacity.
 
 ## Unverified items to check before citing in any write-up
-Connolly & Krueger Handbook pages; the Krueger 2019 book figures; Courty & Pagliero 2014; Black, Fox & Kochanowski 2007; Rosen & Rosenfield 1997; Courty 2003b; Courty 2019; Waisman; Zou; Chan, Mathew & Ruggie 2009; the Bennett et al. pages; the Cui et al. volume and pages; the authorship of the 2023 SBM paper; and the GAO markup figures.
+Connolly & Krueger Handbook pages; the Krueger 2019 book figures; Courty & Pagliero 2014; Black, Fox & Kochanowski 2007; Rosen & Rosenfield 1997; Courty 2003b; Courty 2019; Waisman (publication venue; the seminar abstract is verified, item 31); Zou; the Kemper & Breuer efficiency conclusion; Chan, Mathew & Ruggie 2009; the Bennett et al. pages; the Cui et al. volume and pages; the authorship of the 2023 SBM paper; and the GAO markup figures.

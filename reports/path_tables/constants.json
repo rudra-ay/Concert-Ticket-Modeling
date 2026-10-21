@@ -1,0 +1,20 @@
+{
+  "ci_level_pct": 95,
+  "drift_null_daily_move_rate_pct": 5,
+  "wide_spread_ratio": 3,
+  "near_sale_phase_days": 3,
+  "wild_bootstrap_draws": 1999,
+  "wild_below_effective_clusters": 30,
+  "move_threshold_usd": 0.005,
+  "missing_day_share_allowed": 0.1,
+  "discover_window_days": 120,
+  "far_band_days": 60,
+  "far_share_pct": 60,
+  "ranges_share_pct": 80,
+  "tm_daily_quota": 5000,
+  "collector_budget": 4500,
+  "rate_limit_available_stop": 250,
+  "catchup_max_wait_h": 3,
+  "min_paths_summary": 500,
+  "min_paths_moderators": 1000
+}

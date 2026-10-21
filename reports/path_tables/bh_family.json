@@ -1,0 +1,69 @@
+{
+  "family": [
+    "H20a",
+    "H20b",
+    "H37",
+    "H9p"
+  ],
+  "excluded": {
+    "H1": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H2": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H3": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data (listing-level)",
+    "H4": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H5": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data and sell-out status",
+    "H7": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data (transaction volume)",
+    "H9r": "resale half of H9 (resale premium/path flatness): resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H10": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H11": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H12": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data plus weather join",
+    "H13": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H14": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data at hourly resolution (the collector is daily)",
+    "H17": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data (price variance)",
+    "H18": "needs listing-format (auction vs fixed) data, which no approved source has",
+    "H21": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H32p": "PATH half of H32 (state resale caps): resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data",
+    "H35": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data (resale premium by platform)",
+    "H36": "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data with section/tier"
+  },
+  "pending_p1": {
+    "H20a": "PENDING, enters BH at p = 1 until: first daily run on or after the date the panel reaches N >= 500 complete priced 30-day paths (readiness_schedule.csv, scenario in force: C since 2026-10-22, expected 2026-12-15; it would be 2026-12-22 under the old 3,000 target), run once",
+    "H20b": "PENDING, enters BH at p = 1 until: first daily run on or after the date the panel reaches N >= 500 complete priced 30-day paths (readiness_schedule.csv, scenario in force: C since 2026-10-22, expected 2026-12-15; it would be 2026-12-22 under the old 3,000 target), run once",
+    "H37": "PENDING, enters BH at p = 1 until: first daily run on or after the date the panel reaches N >= 500 complete priced 30-day paths (readiness_schedule.csv, scenario in force: C since 2026-10-22, expected 2026-12-15; it would be 2026-12-22 under the old 3,000 target), run once",
+    "H9p": "PENDING, enters BH at p = 1 until: first daily run on or after the date the panel reaches N >= 500 complete priced 30-day paths (readiness_schedule.csv, scenario in force: C since 2026-10-22, expected 2026-12-15; it would be 2026-12-22 under the old 3,000 target), run once"
+  },
+  "q": {
+    "H20a": 1.0,
+    "H20b": 1.0,
+    "H37": 1.0,
+    "H9p": 1.0
+  },
+  "definitions": {
+    "H20a": {
+      "claim": "Primary face-value repricing becomes more frequent as the show approaches.",
+      "test": "LPM: move ~ 1[0-6 days] + 1[7-13] + 1[14-29] (reference 30+ days) + event FE + snapshot-date FE (absorbs year). One-sided test that the 0-6-day coefficient > 0.",
+      "fe": "event + snapshot date (year)",
+      "source": "LITERATURE H20 (CMA 2025: tier releases)"
+    },
+    "H20b": {
+      "claim": "Primary face-value changes are steps, not continuous drift: on a typical day the face range does not change.",
+      "test": "Intercept-only regression of move on the event-day pairs (snapshot-date FE, year); H0: daily move rate >= 5% (drift-like), one-sided; reject if the upper 95% bound < 5%.",
+      "fe": "snapshot date (year)",
+      "source": "LITERATURE H20"
+    },
+    "H9p": {
+      "claim": "Events with wide primary price spreads (max/min >= 3 on the path's first day, a proxy for platinum/tiered pricing) reprice more often.",
+      "test": "LPM: move ~ wide_spread + days-to-show bucket dummies + snapshot-date FE (year); two-sided test on wide_spread. wide_spread is measured as of the first path day (no look-ahead).",
+      "fe": "days bucket + snapshot date (year)",
+      "source": "LITERATURE H9, primary side"
+    },
+    "H37": {
+      "claim": "Primary face-value changes concentrate around scheduled sale-phase dates (public on-sale start, presale windows) rather than spreading evenly over days to show.",
+      "test": "LPM: move ~ near_sale_phase (snapshot within 3 days after a public_sale_start or presale start/end recorded as of the previous snapshot) + days-to-show bucket dummies + snapshot-date FE (year); one-sided test that near_sale_phase > 0.",
+      "fe": "days bucket + snapshot date (year)",
+      "source": "LITERATURE H37 (CMA 2025; Xu et al. 2019)"
+    }
+  },
+  "common": "Sample: events with a complete priced 30-day path (first snapshot >= 30 days out, valid range on the path's first day, at most 3 of 31 days missing). Unit: event-day pairs (consecutive days, both priced). move = |change| > $0.005 in min or max face value. Weights: none in base; 1/selection_prob in 'IPW (selection)'. SE clustered by artist (first attraction id); p and 95% CI from t(G_eff - 1); null-imposed wild cluster bootstrap (Webb, 1,999 draws) and leave-one-artist-out range if G_eff < 30.",
+  "declared_on": "2026-10-21",
+  "disclosure": "declared after the 3-day descriptive move rates were computed; no estimate of any member existed"
+}
