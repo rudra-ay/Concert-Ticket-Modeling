@@ -61,6 +61,14 @@ Fill for shows ≥45 days out (24.3%) is close to the pilot's 26.2%. The 90–12
 - Every watchlist row records `selected_for_ranges`, `stratum`, `selection_prob` (selected / available in its stratum and pool) and `has_ranges_at_selection`. The 200 pilot events are marked `source='discover-pilot'` and carry no weights.
 - **Promotions:** `daily` runs discover every day. Day-slices are re-searched once they are 7 or more days old, so every show is rescanned weekly and each new day-120 slice is picked up daily. A candidate first seen without ranges that later shows them can fill a free slot. It is logged (`promotion event=...`) and recorded in the `promotions` table with its `first_seen_on`, `ranges_seen_on` and `promoted_on` (= path start). **Never back-date a promoted event's path.**
 
+### Watchlist raised to 4,000 (2026-10-21)
+
+Proposed by collector-prices for PATH readiness (`src/analysis/path_readiness.py`, which simulates `select_panel` day by day). Its estimates: N ≥ 1,000 complete priced 7-day paths arrive Dec 18 → Dec 4, 14-day Dec 26 → Dec 18, 30-day Jan 23 → Jan 15, and the 60-day IPW Kish ESS by Feb 16 rises from about 254 to 445. Approved under the lead's rule that calls stay ≤ 4,500 a day including the weekly discover. That rule is enforced by the rolling-24 h budget above. The selection rules are unchanged: option (b), far share 0.6, ranges share 0.8, `selection_prob` recorded.
+
+**What the extra 1,000 slots contain.** All but 6 of the priced far-band events were already taken. A preview on 2026-10-22's pool picked 6 far with ranges, **594 far random without ranges**, 320 near with ranges, and 80 near random without ranges. Those 594 far events add complete *priced* 60-day paths only if Ticketmaster publishes ranges for them later (fill rises from 19% at 90–120 days to about 28% at 60–89 days). Most of the ESS gain comes through the random draw's weights, not through new priced far paths. The first day may not fit all 1,000 day-0 snapshots under the cap. Any it doesn't fit are taken the next day, and their paths start then.
+
+**IPW across selection days.** `selection_prob` is the realized share **within that day's pool** (stratum × with/without ranges), and the pool excludes events already on the watchlist. With top-ups on several days (the 2026-10-19 main cohort, small daily replacement adds, and the 2026-10-22 raise), treat the **selection day as an extra stratum**: weight 1/`selection_prob` within each day's cohort, and combine the cohorts as strata, not as one sample. An event's overall inclusion probability across days, 1 − Π(1 − pₖ) over the days it was available, needs the daily pools. Those are recoverable from `discover_candidates` only for the latest scan, so prefer cohort-stratified estimates. `discover-pilot` rows have no weight.
+
 ## 1. Add the key (user action)
 
 1. Register for free at https://developer.ticketmaster.com/ and create an app. Copy its **Consumer Key**.
@@ -103,7 +111,7 @@ To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-co
 
 `daily` does the following:
 1. **Snapshot.** It calls `GET /discovery/v2/events/{id}.json` once per active watchlist event, nearest show first, so that if the budget runs out, the events closest to their show (where PATH moves most) are covered.
-2. **Discover (every day; cheap).** Only day-slices that are new or 7 or more days old are searched, so most days cost a few calls and one day a week costs about 150–250 (a full rescan). It searches `events.json?classificationName=music&countryCode=US` one UTC day at a time for 1–120 days out (200 per page, up to Ticketmaster's 1,000-item deep-paging cap per day) and tops the watchlist up to `--target` (default 3,000) active events using the option (b) selection above. New events are snapshotted the same day.
+2. **Discover (every day; cheap), then a catch-up pass.** Only day-slices that are new or 7 or more days old are searched, so most days cost a few calls and one day a week costs about 150–250 (a full rescan). It searches `events.json?classificationName=music&countryCode=US` one UTC day at a time for 1–120 days out (200 per page, up to Ticketmaster's 1,000-item deep-paging cap per day) and tops the watchlist up to `--target` (**default 4,000 since 2026-10-21**; it was 3,000) active events using the option (b) selection above. A final catch-up pass (`daily-new` in `runs`) snapshots the new events the same day and retries events missed by network errors earlier in the run (2026-10-20/21: 30 and 37 read timeouts, DNS failures and "network unreachable" errors while the Mac slept).
 
 Within the with-ranges pool, discover picks for diversity. It round-robins over (state × genre) strata, with soft caps per venue and per artist: 3 each to start, doubling only when slots would otherwise go unfilled. It excludes parking, upgrades, and add-ons. `--far-share 0.6` sends 60% of new slots to shows 60 or more days out, because only those can yield a full 60-day path. The Discovery API has no venue capacity, so venue size diversity comes from spreading across many venues. Capacity is joined later from Wikidata.
 
@@ -117,17 +125,18 @@ Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs
 | `price_ranges` | one row per range: `type` (e.g. `standard`, `standard including fees`), `currency`, `min`, `max` |
 | `missing_price_ranges` (view) | every 200-response snapshot without `priceRanges`. Each one is also logged as `missing_priceRanges event=...` and counted per run |
 | `runs` | one row per run: calls, saved, missing ranges, 404s, errors, added, left undone, and the stop reason |
-| `api_calls` | calls per UTC day, the persistent budget counter |
+| `api_call_log` | timestamp of every API request, for the rolling-24 h budget (pruned after 48 h) |
+| `api_calls` | calls per UTC day (reporting) |
 | `watchlist`, `discover_candidates`, `discover_slices` | the panel, the search results, and the search cache |
 
 ### Limits and safety
 
 - **Rate:** a token bucket at **3 req/s** or slower, with no bursts (`--rate` can only lower it). Ticketmaster allows 5. The first full run at 4 req/s (2026-10-19) drew six spike-arrest 429s, each cleared by one 2 s retry, so the default was lowered. A 3,000-event run takes about 17 minutes.
-- **Daily budget:** 4,500 calls per UTC day by default (`--budget` or `TM_DAILY_BUDGET`; quota is 5,000). The budget counts every attempt, including retries, and persists across reruns. The run also stops early if Ticketmaster's `Rate-Limit-Available` header falls to 250.
+- **Rolling 24-hour budget (since 2026-10-21):** at most **4,500 calls in any rolling 24 hours** by default (`--budget` or `TM_DAILY_BUDGET`; the quota is 5,000/day). Ticketmaster's quota behaves like a **rolling 24-hour window, not a UTC day.** On 2026-10-20 the 09:15 run was cut at 1,563 calls when `Rate-Limit-Available` reached the 250 reserve, because the 3,218 calls made about 17 hours earlier still counted. Every attempt, including retries, is logged in `api_call_log`. When the window is full, the run **waits** for old calls to age out (at most `--max-wait-hours`, default 3 h, per run) and then stops cleanly (exit 0, `stopped='…rolling 24h…'`). On first use, the log was backfilled from the last 24 h of `runs`. The `Rate-Limit-Available` reserve stays as a hard stop. `api_calls` still holds per-UTC-day counts for reporting.
 - **429 policy (lead, 2026-10-19):** a rare transient 429 (spike arrest: no `Retry-After`, no quota body) gets one exponential backoff (2 s, then 4 s, then 8 s for the same call). The run **stops for the day, exits 6, and must be reported** if a 429 carries `Retry-After` or a quota body, if more than **1%** of the run's calls draw 429s, or if a call is still 429 after 3 retries. A 401 or 403 stops at once and is never retried (exit 5). 5xx errors get 3 retries; an event that still fails is left unsaved, so a same-day rerun picks it up.
 - **Idempotent:** one row per (event, UTC day), so a rerun the same day makes no calls for events already saved.
 - **Key hygiene:** the key comes only from the environment or `.env`. Every log line passes through a redaction filter, raw JSON has `apikey=` (and the literal key) stripped before it is compressed, and saved URLs never contain it. The tests check all three.
-- **Budget at steady state:** about 3,000 snapshot calls a day, plus about 700 discover calls once a week, which is under 4,500. Storage is about 3 KB of gzipped raw JSON per snapshot, so about 9 MB a day, or roughly 1–1.5 GB over 4–5 months.
+- **Budget at steady state (target 4,000):** 4,000 snapshots × 1.03 (retries and network-error catch-ups; observed 429s are 0.2%, and catch-ups were 1.2% on 2026-10-21) = 4,120, plus the weekly full rescan (152 calls observed on 2026-10-19; budget 250), plus a few calls a day for the new day-120 slice. That's about **4,370 at most in any 24 h, under the 4,500 cap**, which is itself under Ticketmaster's 5,000 minus the 250 reserve. The cap enforces this in every 24-hour window, so a drifted start time (Mac asleep at 09:15) makes the next run wait or truncate instead of overrunning. Runs are latency-bound at about 0.6 req/s in practice (2026-10-21: 3,000 calls in 83 min), so a 4,000-event run takes about **2 h**, longer if it has to wait for the window. Storage is about 3 KB of gzipped raw JSON per snapshot, so about 12 MB a day.
 
 ## 4. What PATH analysis needs from this, and how long it must run
 
@@ -144,7 +153,7 @@ Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs
 - **2027-02-16 (K + 120 days):** the last show of the first cohort (120 days out on 2026-10-19) has finished. This is the **minimum run length.**
 - **About 2027-04-17 (K + 180 days, recommended):** weekly discovery keeps adding shows that are 60–120 days out, which brings in spring tours, more genres, and enough events for the moderator splits.
 
-**What each day of delay costs:** about 3,000 event-day snapshots, gone for good. The day's discovery cohort also slides out of the "60 or more days out" window: shows that are exactly 60 days out today will never have a complete 60-day path. Nothing can be backfilled from the API.
+**What each day of delay costs:** about 4,000 event-day snapshots, gone for good. The day's discovery cohort also slides out of the "60 or more days out" window: shows that are exactly 60 days out today will never have a complete 60-day path. Nothing can be backfilled from the API.
 
 ## 5. Limitation: this is primary-market face data, not resale
 

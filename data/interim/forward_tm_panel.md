@@ -24,7 +24,7 @@ Source DB: `data/forward/tm_forward.sqlite` (gitignored; private, see the storag
 | first_days_out | int | days to show at the first snapshot. **≥60 = eligible for a full 60-day path** |
 | selected_for_ranges | int | 1 = picked from the with-ranges pool (diversity round-robin; includes promotions); 0 = **simple random draw** within its stratum from events without ranges; NULL = pilot/manual |
 | stratum | text | `far|near` + `|state|genre` at selection. far = show ≥60 days out on the selection day. `pilot` for pilot rows |
-| selection_prob | real | realized probability = selected / available in (stratum, with-/without-ranges pool) on the selection day. IPW weight = 1 / selection_prob. For with-ranges picks it is a realized share of a diversity-capped (not random) pick |
+| selection_prob | real | realized probability = selected / available in (stratum, with-/without-ranges pool) on the selection day. IPW weight = 1 / selection_prob. For with-ranges picks it is a realized share of a diversity-capped (not random) pick. **Conditional on that day's pool** (which excludes events already on the watchlist). Treat the selection day (`added_at` date) as an extra stratum: weight within each day's cohort and combine cohorts as strata. Cohorts so far: 2026-10-19 main, the 2026-10-22 raise from 3,000 to 4,000 (mostly far random without ranges; the far priced pool was exhausted), and small daily replacement adds |
 | has_ranges_at_selection | int | whether the event had priceRanges in the discover scan that selected it |
 
 ### `snapshots` (one row per event per UTC day; PK `event_id, snap_date`)
@@ -53,7 +53,7 @@ Source DB: `data/forward/tm_forward.sqlite` (gitignored; private, see the storag
 Events that a discover scan first saw **without** ranges and a later scan saw **with** ranges, then added to a free slot. `promoted_on` = the date the path starts, `first_seen_on`, `ranges_seen_on`, `days_out_at_promotion`. A promoted event has no data before `promoted_on`. Never back-date its path.
 
 ### Other tables
-`runs` (per-run counts and stop reasons), `api_calls` (calls per UTC day), `discover_candidates` (the latest scan of every candidate, plus `first_seen_on` / `first_has_ranges` / `ranges_seen_on`), `discover_slices` (search cache), and the view `missing_price_ranges`.
+`runs` (per-run counts and stop reasons), `api_call_log` (timestamp of every request, for the rolling-24 h budget), `api_calls` (calls per UTC day), `discover_candidates` (the latest scan of every candidate, plus `first_seen_on` / `first_has_ranges` / `ranges_seen_on`), `discover_slices` (search cache), and the view `missing_price_ranges`.
 
 ## Recommended analysis filters
 - Full 60-day path: `first_days_out >= 60` and the show has passed, with snapshots on at least 90% of the days in the window.

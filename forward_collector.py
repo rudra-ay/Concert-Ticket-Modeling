@@ -52,7 +52,9 @@ API_BASE = "https://app.ticketmaster.com/discovery/v2"
 USER_AGENT = "TicketPriceResearch/0.1 (personal research; contact: rudraayyagari@gmail.com)"
 
 DAILY_QUOTA = 5000
-DEFAULT_BUDGET = 4500          # 90% of the quota; the rest is safety margin
+DEFAULT_BUDGET = 4500          # max calls in any rolling 24 h (90% of the quota); the rest is safety margin
+DEFAULT_MAX_WAIT_S = 3 * 3600  # how long a run may wait for the rolling window to free up
+DEFAULT_TARGET = 4000          # active watchlist size (raised from 3,000 on 2026-10-21; see FORWARD_COLLECTOR.md)
 DEFAULT_RATE = 3.0             # req/s; 4 req/s drew occasional spike-arrest 429s on 2026-10-19 (TM allows 5)
 MAX_RETRIES = 3
 RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops to this
@@ -224,29 +226,93 @@ def parse_retry_after(value: str | None, now: datetime) -> float | None:
 
 
 class CallBudget:
-    """Per-UTC-day call counter persisted in SQLite, so reruns and retries all count."""
+    """Rolling-24h call budget persisted in SQLite (every attempt, incl. retries, counts).
 
-    def __init__(self, conn: sqlite3.Connection, clock: Clock, limit: int) -> None:
-        self.conn, self.clock, self.limit = conn, clock, limit
+    Ticketmaster's 5,000/day quota behaves like a rolling 24-hour window, not a UTC day: on
+    2026-10-20 its Rate-Limit-Available hit the reserve after 1,563 calls because 3,218 calls made
+    ~17 h earlier still counted. So no 24-hour window may hold more than `limit` calls. When the
+    window is full the run waits for old calls to age out (up to `max_wait_s` in total), then stops.
+    The per-UTC-day `api_calls` counter is kept for reporting.
+    """
+
+    WINDOW_S = 24 * 3600
+
+    def __init__(self, conn: sqlite3.Connection, clock: Clock, limit: int,
+                 max_wait_s: float = DEFAULT_MAX_WAIT_S) -> None:
+        self.conn, self.clock, self.limit, self.max_wait_s = conn, clock, limit, max_wait_s
+        self.spent = 0          # calls spent through this budget object (this process)
+        self.waited = 0.0
+        self.hard_stop: str | None = None
+        self._backfill_from_runs()
+
+    def _now(self) -> float:
+        return self.clock.now().timestamp()
+
+    def _backfill_from_runs(self) -> None:
+        """First use on an older DB: spread recent runs' calls evenly over their start..finish."""
+        if self.conn.execute("SELECT 1 FROM api_call_log LIMIT 1").fetchone():
+            return
+        since = self._now() - self.WINDOW_S
+        rows = []
+        for started, finished, calls in self.conn.execute(
+                "SELECT started_at, finished_at, calls_used FROM runs WHERE calls_used > 0 AND finished_at IS NOT NULL"):
+            a, b = _parse_iso(started), _parse_iso(finished)
+            if not a or not b or b.timestamp() < since:
+                continue
+            span = max(0.0, b.timestamp() - a.timestamp())
+            rows += [(a.timestamp() + span * (i + 0.5) / calls,) for i in range(calls)]
+        if rows:
+            self.conn.executemany("INSERT INTO api_call_log(ts) VALUES (?)", rows)
+            self.conn.commit()
+            log.info("budget: backfilled %d call timestamps from recent runs", len(rows))
 
     def day(self) -> str:
         return self.clock.now().date().isoformat()
 
     def used(self) -> int:
+        """Calls in the current UTC day (reporting only)."""
         row = self.conn.execute("SELECT calls FROM api_calls WHERE day = ?", (self.day(),)).fetchone()
         return row[0] if row else 0
 
+    def in_window(self) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM api_call_log WHERE ts > ?",
+                                 (self._now() - self.WINDOW_S,)).fetchone()[0]
+
     def remaining(self) -> int:
-        return max(0, self.limit - self.used())
+        return 0 if self.hard_stop else max(0, self.limit - self.in_window())
+
+    def stop_now(self, reason: str) -> None:
+        self.hard_stop = reason
 
     def spend(self) -> None:
-        if self.used() >= self.limit:
-            raise StopForToday(f"daily call budget of {self.limit} reached")
+        while True:
+            if self.hard_stop:
+                raise StopForToday(f"call budget closed: {self.hard_stop}")
+            now = self._now()
+            n = self.in_window()
+            if n < self.limit:
+                break
+            # Wait until enough old calls leave the window to make room for one more.
+            row = self.conn.execute("SELECT ts FROM api_call_log WHERE ts > ? ORDER BY ts LIMIT 1 OFFSET ?",
+                                    (now - self.WINDOW_S, n - self.limit)).fetchone()
+            wait = row[0] + self.WINDOW_S - now + 1.0
+            if self.waited + wait > self.max_wait_s:
+                raise StopForToday(f"rolling 24h call budget of {self.limit} reached "
+                                   f"(next slot in {wait / 60:.0f} min, over the {self.max_wait_s / 3600:.1f} h wait cap)")
+            log.info("budget: %d calls in the last 24h (limit %d); waiting %.0f s for old calls to age out",
+                     n, self.limit, wait)
+            self.clock.sleep(wait)
+            self.waited += wait
+        now = self._now()
+        self.conn.execute("INSERT INTO api_call_log(ts) VALUES (?)", (now,))
         self.conn.execute(
             "INSERT INTO api_calls(day, calls) VALUES (?, 1) "
             "ON CONFLICT(day) DO UPDATE SET calls = calls + 1",
             (self.day(),),
         )
+        self.spent += 1
+        if self.spent % 500 == 0:
+            self.conn.execute("DELETE FROM api_call_log WHERE ts < ?", (now - 2 * self.WINDOW_S,))
         self.conn.commit()
 
 
@@ -282,7 +348,7 @@ class TMClient:
                 if self.last_available <= RESERVE_AVAILABLE and resp.status != 429:
                     log.warning("Rate-Limit-Available=%s <= reserve %s; stopping after this call",
                                 avail, RESERVE_AVAILABLE)
-                    self.budget.limit = self.budget.used()  # no more calls today
+                    self.budget.stop_now(f"Rate-Limit-Available={avail} <= reserve {RESERVE_AVAILABLE}")
             if resp.status in (401, 403):
                 raise AuthError(f"Ticketmaster returned HTTP {resp.status}: the API key was rejected "
                                 "or access is forbidden. Check TICKETMASTER_API_KEY; not retrying.")
@@ -403,6 +469,10 @@ CREATE TABLE IF NOT EXISTS runs (
     remaining_todo  INTEGER DEFAULT 0,
     stopped_reason  TEXT
 );
+CREATE TABLE IF NOT EXISTS api_call_log (
+    ts REAL NOT NULL                         -- UTC epoch seconds of each request (rolling-24h budget)
+);
+CREATE INDEX IF NOT EXISTS api_call_log_ts ON api_call_log(ts);
 CREATE TABLE IF NOT EXISTS api_calls (
     day   TEXT PRIMARY KEY,                  -- UTC date
     calls INTEGER NOT NULL
@@ -632,7 +702,7 @@ def run_snapshots(conn: sqlite3.Connection, client: TMClient, clock: Clock,
     log.info("run %s: %d events to snapshot, budget remaining %d", snap_date, len(todo),
              client.budget.remaining())
     client.planned = max(client.planned, client.calls + len(todo))
-    calls_before = client.budget.used()
+    calls_before = client.budget.spent
     done = 0
     try:
         for event_id in todo:
@@ -643,11 +713,11 @@ def run_snapshots(conn: sqlite3.Connection, client: TMClient, clock: Clock,
         log.warning("stopped for today: %s", exc)
         if isinstance(exc, AuthError):
             stats.remaining_todo = len(todo) - done
-            stats.calls_used = client.budget.used() - calls_before
+            stats.calls_used = client.budget.spent - calls_before
             _finish_run(conn, run_id, stats, clock)
             raise
     stats.remaining_todo = len(todo) - done
-    stats.calls_used = client.budget.used() - calls_before
+    stats.calls_used = client.budget.spent - calls_before
     _finish_run(conn, run_id, stats, clock)
     log.info("run %s done: saved=%d missing_priceRanges=%d not_found=%d errors=%d calls=%d left=%d%s",
              snap_date, stats.snapshots_saved, stats.missing_price_ranges, stats.not_found,
@@ -933,20 +1003,20 @@ def select_panel(cands: list[dict[str, Any]], slots: int, today: date, far_share
             for e, flag in chosen]
 
 
-def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: int = 3000,
+def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: int = DEFAULT_TARGET,
              days_min: int = 1, days_max: int = 120, max_calls: int = 700, far_share: float = 0.6,
              max_pages_per_day: int = 5) -> RunStats:
     stats = RunStats()
     run_id = _start_run(conn, "discover", clock)
     today = clock.now().date()
-    calls_before = client.budget.used()
+    calls_before = client.budget.spent
     client.planned = max(client.planned, client.calls + max_calls)
     try:
         fetch_candidates(conn, client, clock, days_min, days_max, max_calls, max_pages_per_day)
     except StopForToday as exc:
         stats.stopped_reason = str(exc)
         log.warning("discover stopped: %s", exc)
-    stats.calls_used = client.budget.used() - calls_before
+    stats.calls_used = client.budget.spent - calls_before
 
     active = conn.execute("SELECT COUNT(*) FROM watchlist WHERE active=1").fetchone()[0]
     slots = max(0, target - active)
@@ -1128,14 +1198,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", type=Path, default=DEFAULT_DB)
     p.add_argument("--env-file", type=Path, default=ROOT / ".env")
     p.add_argument("--budget", type=int, default=int(os.environ.get("TM_DAILY_BUDGET", DEFAULT_BUDGET)),
-                   help=f"max API calls per UTC day (default {DEFAULT_BUDGET}, quota is {DAILY_QUOTA})")
+                   help=f"max API calls in any rolling 24 h (default {DEFAULT_BUDGET}, quota is {DAILY_QUOTA}/day)")
+    p.add_argument("--max-wait-hours", type=float, default=DEFAULT_MAX_WAIT_S / 3600,
+                   help="how long a run may wait for the rolling 24 h budget to free up")
     p.add_argument("--rate", type=float, default=DEFAULT_RATE, help="max requests/second (capped at DEFAULT_RATE)")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="snapshot every active watchlist event once today")
     r.add_argument("--limit", type=int)
     d = sub.add_parser("discover", help="add upcoming US music events to the watchlist")
     for sp in (d, sub.add_parser("daily", help="run, then discover if due (for launchd)")):
-        sp.add_argument("--target", type=int, default=3000, help="active watchlist size to aim for")
+        sp.add_argument("--target", type=int, default=DEFAULT_TARGET, help="active watchlist size to aim for")
         sp.add_argument("--max-calls", type=int, default=700, help="max search calls for discover")
         sp.add_argument("--days-min", type=int, default=1)
         sp.add_argument("--days-max", type=int, default=120)
@@ -1191,7 +1263,7 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
             return EXIT_OK
 
         assert key is not None
-        client = TMClient(key, transport or RequestsTransport(), clock, CallBudget(conn, clock, budget_limit), rate)
+        client = TMClient(key, transport or RequestsTransport(), clock, CallBudget(conn, clock, budget_limit, args.max_wait_hours * 3600), rate)
         try:
             if args.cmd in ("run", "daily"):
                 stats = run_snapshots(conn, client, clock, getattr(args, "limit", None), command=args.cmd)
@@ -1202,8 +1274,9 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
                     if max_calls > 0:
                         d = discover(conn, client, clock, args.target, args.days_min, args.days_max,
                                      max_calls, args.far_share)
-                        if d.added_to_watchlist and not d.stopped_reason:
-                            run_snapshots(conn, client, clock, command="daily-new")  # day 0 for new adds
+                        if not d.stopped_reason:
+                            # Catch-up: day 0 for new adds, plus events lost to network errors above.
+                            run_snapshots(conn, client, clock, command="daily-new")
             elif args.cmd == "discover":
                 discover(conn, client, clock, args.target, args.days_min, args.days_max, args.max_calls,
                          args.far_share)
