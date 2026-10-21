@@ -50,3 +50,4 @@ data/forward/
 
 # Raw caches of third-party pages and API responses (may embed their tokens; not ours to redistribute)
 data/raw/
+logs/
