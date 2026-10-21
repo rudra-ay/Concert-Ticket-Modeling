@@ -431,6 +431,13 @@ def test_default_target_is_4000():
     assert fc.DEFAULT_TARGET == 4000
     args = fc.build_parser().parse_args(["daily"])
     assert args.target == 4000 and args.budget <= 4500
+    assert args.far_share == fc.DEFAULT_FAR_SHARE == 0.3  # scenario C
+
+
+def test_far_share_03_allocates_new_slots():
+    today = T0.date()
+    picks = fc.select_panel(make_cands(4000, today, seed=3), 1000, today, far_share=fc.DEFAULT_FAR_SHARE, seed="c")
+    assert sum(p["stratum"].startswith("far|") for p in picks) == 300
 
 
 def test_low_rate_limit_available_header_stops(conn, clock):

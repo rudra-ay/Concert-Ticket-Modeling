@@ -55,19 +55,37 @@ On the event detail endpoint (the first full `daily`, 2,960 snapshots), fill mat
 Fill for shows ≥45 days out (24.3%) is close to the pilot's 26.2%. The 90–120 day band is lower (19.0%), so ranges are often published later. **Missingness depends heavily on genre**, so an unweighted panel would be thin, and a ranges-only panel would be biased.
 
 **Decision (lead, 2026-10-19): option (b), a ranges-tilted stratified panel.**
-- Strata are (band, state, genre), where band = `far` (show ≥60 days out on the selection day) or `near`. 60% of new slots go to the far band.
+- Strata are (band, state, genre), where band = `far` (show ≥60 days out on the selection day) or `near`. 60% of new slots went to the far band on 2026-10-19; 30% since 2026-10-22 (scenario C, below).
 - In each band, **80% of slots go to events that publish priceRanges**, picked round-robin across strata with soft per-venue and per-artist caps. The remaining **20% are a simple random draw within each stratum** (proportional allocation) of events **without** ranges. This shows whether ranges appear or disappear later, and supports inverse-probability weighting.
 - When a pool runs short, its slots overflow to the other pool. On 2026-10-19 the far band had only 1,165 priced events in total, and all of them were taken (p = 1). The far band is therefore 1,165 with ranges plus 515 random without (69/31).
 - Every watchlist row records `selected_for_ranges`, `stratum`, `selection_prob` (selected / available in its stratum and pool) and `has_ranges_at_selection`. The 200 pilot events are marked `source='discover-pilot'` and carry no weights.
 - **Promotions:** `daily` runs discover every day. Day-slices are re-searched once they are 7 or more days old, so every show is rescanned weekly and each new day-120 slice is picked up daily. A candidate first seen without ranges that later shows them can fill a free slot. It is logged (`promotion event=...`) and recorded in the `promotions` table with its `first_seen_on`, `ranges_seen_on` and `promoted_on` (= path start). **Never back-date a promoted event's path.**
 
-### Watchlist raised to 4,000 (2026-10-21)
+### Watchlist raised to 4,000, far share 0.3 (scenario C, 2026-10-21)
 
-Proposed by collector-prices for PATH readiness (`src/analysis/path_readiness.py`, which simulates `select_panel` day by day). Its estimates: N ≥ 1,000 complete priced 7-day paths arrive Dec 18 → Dec 4, 14-day Dec 26 → Dec 18, 30-day Jan 23 → Jan 15, and the 60-day IPW Kish ESS by Feb 16 rises from about 254 to 445. Approved under the lead's rule that calls stay ≤ 4,500 a day including the weekly discover. That rule is enforced by the rolling-24 h budget above. The selection rules are unchanged: option (b), far share 0.6, ranges share 0.8, `selection_prob` recorded.
+Proposed by collector-prices for PATH readiness (`src/analysis/path_readiness.py`, `readiness_schedule_wide.csv`, which simulate `select_panel` day by day) and chosen by the lead. **Target 4,000 active events, and 30% of new slots go to the far band** (it was 60%). Ranges share (0.8), strata and `selection_prob` are unchanged. The simulation's estimates for C:
+- priced N = 500 at the 7-day horizon on Nov 12 (status quo Nov 19), and at 14 days on Nov 16 (Nov 29);
+- priced N = 1,000 at 7 days on Nov 22 (Dec 18);
+- 60-day dates unchanged (Feb 19).
 
-**What the extra 1,000 slots contain.** All but 6 of the priced far-band events were already taken. A preview on 2026-10-22's pool picked 6 far with ranges, **594 far random without ranges**, 320 near with ranges, and 80 near random without ranges. Those 594 far events add complete *priced* 60-day paths only if Ticketmaster publishes ranges for them later (fill rises from 19% at 90–120 days to about 28% at 60–89 days). Most of the ESS gain comes through the random draw's weights, not through new priced far paths. The first day may not fit all 1,000 day-0 snapshots under the cap. Any it doesn't fit are taken the next day, and their paths start then.
+It was approved under the lead's rule that calls stay ≤ 4,500 per day including the weekly discover, which the rolling-24 h budget enforces (steady-state math under Limits).
 
-**IPW across selection days.** `selection_prob` is the realized share **within that day's pool** (stratum × with/without ranges), and the pool excludes events already on the watchlist. With top-ups on several days (the 2026-10-19 main cohort, small daily replacement adds, and the 2026-10-22 raise), treat the **selection day as an extra stratum**: weight 1/`selection_prob` within each day's cohort, and combine the cohorts as strata, not as one sample. An event's overall inclusion probability across days, 1 − Π(1 − pₖ) over the days it was available, needs the daily pools. Those are recoverable from `discover_candidates` only for the latest scan, so prefer cohort-stratified estimates. `discover-pilot` rows have no weight.
+**When:** the first top-up is the scheduled `daily` on **2026-10-22 at 09:15**. It happens at the discover step after the main snapshot pass. The catch-up pass then takes the new events' day-0 snapshots under the cap, and any that don't fit carry over to 10-23 (their paths start then).
+
+**What the extra 1,000 slots contain.** All but 6 of the priced far-band events were already on the watchlist. A preview on 2026-10-22's pool:
+
+| far share | far with ranges | far random without | near with ranges | near random without |
+|---|---|---|---|---|
+| 0.6 (old) | 6 | 594 | 320 | 80 |
+| **0.3 (C)** | **6** | **294** | **560** | **140** |
+
+C adds 566 priced events instead of 326. That is where the earlier short-horizon (7–30 day) readiness comes from. Far events without ranges add priced 60-day paths only if Ticketmaster publishes ranges for them later. From 2026-10-22 on, daily replacement adds also use 0.3.
+
+**IPW across selection days.** `selection_prob` is the realized share **within that day's pool** (stratum × with/without ranges), and the pool excludes events already on the watchlist. The band mix also differs by cohort: 0.6 far on 2026-10-19, 0.3 from 2026-10-22. So treat the **selection day (the `added_at` date) as an extra stratum**: weight 1/`selection_prob` within each day's cohort, and combine the cohorts as strata, not as one sample. An event's overall inclusion probability across days, 1 − Π(1 − pₖ) over the days it was available, would need every day's pool, and `discover_candidates` keeps only the latest scan. So use cohort-stratified estimates. `discover-pilot` rows carry no weight.
+
+**Drift risk (accepted, not time-shifted).** launchd runs at 09:15, or at wake if the Mac was asleep. The job does **not** shift itself to keep runs 24 h apart. If a run starts late by D hours, the next 09:15 run shares the rolling window with it. That run then follows the old calls as they age out, waiting at most 3 h in total. If D is more than about 3 h, it stops early (exit 0, `stopped='…rolling 24h…'`), losing roughly 2,000 snapshots per extra hour.
+- Snapshot order is nearest-show-first, so **short-horizon paths (7- and 14-day) are protected** and far events lose that day. 60-day paths tolerate up to 6 missed days (the 10% rule).
+- Manual catch-up runs late in the day cause the same overlap, so avoid them unless the scheduled run failed.
 
 ## 1. Add the key (user action)
 
@@ -113,7 +131,7 @@ To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-co
 1. **Snapshot.** It calls `GET /discovery/v2/events/{id}.json` once per active watchlist event, nearest show first, so that if the budget runs out, the events closest to their show (where PATH moves most) are covered.
 2. **Discover (every day; cheap), then a catch-up pass.** Only day-slices that are new or 7 or more days old are searched, so most days cost a few calls and one day a week costs about 150–250 (a full rescan). It searches `events.json?classificationName=music&countryCode=US` one UTC day at a time for 1–120 days out (200 per page, up to Ticketmaster's 1,000-item deep-paging cap per day) and tops the watchlist up to `--target` (**default 4,000 since 2026-10-21**; it was 3,000) active events using the option (b) selection above. A final catch-up pass (`daily-new` in `runs`) snapshots the new events the same day and retries events missed by network errors earlier in the run (2026-10-20/21: 30 and 37 read timeouts, DNS failures and "network unreachable" errors while the Mac slept).
 
-Within the with-ranges pool, discover picks for diversity. It round-robins over (state × genre) strata, with soft caps per venue and per artist: 3 each to start, doubling only when slots would otherwise go unfilled. It excludes parking, upgrades, and add-ons. `--far-share 0.6` sends 60% of new slots to shows 60 or more days out, because only those can yield a full 60-day path. The Discovery API has no venue capacity, so venue size diversity comes from spreading across many venues. Capacity is joined later from Wikidata.
+Within the with-ranges pool, discover picks for diversity. It round-robins over (state × genre) strata, with soft caps per venue and per artist: 3 each to start, doubling only when slots would otherwise go unfilled. It excludes parking, upgrades, and add-ons. `--far-share` (default 0.3 since 2026-10-22; it was 0.6) sets the share of new slots for shows 60 or more days out, the only ones that can yield a full 60-day path. The Discovery API has no venue capacity, so venue size diversity comes from spreading across many venues. Capacity is joined later from Wikidata.
 
 Watchlist management: `watchlist add <id>...`, `watchlist import ids.csv` (needs an `event_id` column), and `watchlist export out.csv`. Events drop off automatically once their date has passed, once they are cancelled, or after three 404s in a row.
 

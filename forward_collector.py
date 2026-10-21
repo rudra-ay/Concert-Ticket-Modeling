@@ -55,6 +55,7 @@ DAILY_QUOTA = 5000
 DEFAULT_BUDGET = 4500          # max calls in any rolling 24 h (90% of the quota); the rest is safety margin
 DEFAULT_MAX_WAIT_S = 3 * 3600  # how long a run may wait for the rolling window to free up
 DEFAULT_TARGET = 4000          # active watchlist size (raised from 3,000 on 2026-10-21; see FORWARD_COLLECTOR.md)
+DEFAULT_FAR_SHARE = 0.3        # share of NEW slots for shows >= 60 days out (scenario C, 2026-10-21; was 0.6)
 DEFAULT_RATE = 3.0             # req/s; 4 req/s drew occasional spike-arrest 429s on 2026-10-19 (TM allows 5)
 MAX_RETRIES = 3
 RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops to this
@@ -1004,7 +1005,7 @@ def select_panel(cands: list[dict[str, Any]], slots: int, today: date, far_share
 
 
 def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: int = DEFAULT_TARGET,
-             days_min: int = 1, days_max: int = 120, max_calls: int = 700, far_share: float = 0.6,
+             days_min: int = 1, days_max: int = 120, max_calls: int = 700, far_share: float = DEFAULT_FAR_SHARE,
              max_pages_per_day: int = 5) -> RunStats:
     stats = RunStats()
     run_id = _start_run(conn, "discover", clock)
@@ -1211,7 +1212,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--max-calls", type=int, default=700, help="max search calls for discover")
         sp.add_argument("--days-min", type=int, default=1)
         sp.add_argument("--days-max", type=int, default=120)
-        sp.add_argument("--far-share", type=float, default=0.6, help="share of new slots for shows >= 60 days out")
+        sp.add_argument("--far-share", type=float, default=DEFAULT_FAR_SHARE,
+                        help="share of new slots for shows >= 60 days out")
     w = sub.add_parser("watchlist")
     wsub = w.add_subparsers(dest="wcmd", required=True)
     wsub.add_parser("add").add_argument("ids", nargs="+")
