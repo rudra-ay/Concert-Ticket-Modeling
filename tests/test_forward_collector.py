@@ -366,6 +366,73 @@ def test_daily_budget_stops_and_persists_across_reruns(conn, clock):
     assert stats.snapshots_saved == 5
 
 
+def test_rolling_window_waits_and_never_exceeds_limit(conn, clock):
+    ids = [f"E{i}" for i in range(8)]
+    t = FakeTransport(clock, {i: load("event_with_ranges.json") for i in ids})
+    seed(conn, clock, ids)
+    client = fc.TMClient(KEY, t, clock, fc.CallBudget(conn, clock, 5, max_wait_s=30 * 3600))
+    stats = fc.run_snapshots(conn, client, clock)
+    assert stats.snapshots_saved == 8 and stats.stopped_reason is None
+    times = [c[0] for c in t.calls]
+    for i, a in enumerate(times):
+        assert sum(1 for b in times[i:] if b < a + 24 * 3600) <= 5
+    assert times[5] - times[0] >= 24 * 3600  # call 6 waited for call 1 to age out
+
+
+def test_rolling_window_counts_yesterdays_late_calls(conn, clock):
+    """The 2026-10-20 case: a big run late yesterday limits an early run today (UTC days differ)."""
+    budget = fc.CallBudget(conn, clock, 10, max_wait_s=0)
+    for _ in range(8):
+        budget.spend()
+    clock.t += 17 * 3600  # next UTC day already? T0 is 12:00 UTC, +17 h = 05:00 UTC next day
+    assert clock.now().date() != T0.date()
+    assert budget.used() == 0 and budget.in_window() == 8 and budget.remaining() == 2
+    budget.spend(); budget.spend()
+    with pytest.raises(fc.StopForToday, match="rolling 24h"):
+        budget.spend()
+
+
+def test_budget_backfills_from_recent_runs(tmp_path, clock):
+    conn = fc.connect(tmp_path / "b.sqlite")
+    conn.execute("INSERT INTO runs(command, snap_date, started_at, finished_at, calls_used) VALUES "
+                 "('daily', '2026-10-18', ?, ?, 300)",
+                 ((T0 - timedelta(hours=3)).isoformat(), (T0 - timedelta(hours=2)).isoformat()))
+    conn.execute("INSERT INTO runs(command, snap_date, started_at, finished_at, calls_used) VALUES "
+                 "('daily', '2026-10-16', ?, ?, 999)",
+                 ((T0 - timedelta(days=2)).isoformat(), (T0 - timedelta(days=2, hours=-1)).isoformat()))
+    conn.commit()
+    b = fc.CallBudget(conn, clock, 4500)
+    assert b.in_window() == 300 and b.remaining() == 4200
+    fc.CallBudget(conn, clock, 4500)  # second construction must not backfill again
+    assert b.in_window() == 300
+
+
+def test_daily_catchup_retries_network_errors(tmp_path, monkeypatch, clock):
+    monkeypatch.setenv("TICKETMASTER_API_KEY", KEY)
+    db = tmp_path / "x.sqlite"
+    fc.main(["--db", str(db), "watchlist", "add", "E1", "E2"], log_to_file=False)
+
+    class Flaky(FakeTransport):
+        failed = False
+
+        def get(self, url, params):
+            if url.endswith("/E2.json") and not self.failed:
+                self.failed = True
+                self.calls.append((self.clock.monotonic(), url, dict(params)))
+                raise fc.TransportError("Read timed out.")
+            return super().get(url, params)
+
+    t = Flaky(clock, AnyEvent(), search=lambda p: fc.Response(200, {}, (FIX / "search_empty.json").read_bytes()))
+    assert fc.main(["--db", str(db), "daily", "--days-max", "2"], transport=t, clock=clock, log_to_file=False) == 0
+    assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 2
+
+
+def test_default_target_is_4000():
+    assert fc.DEFAULT_TARGET == 4000
+    args = fc.build_parser().parse_args(["daily"])
+    assert args.target == 4000 and args.budget <= 4500
+
+
 def test_low_rate_limit_available_header_stops(conn, clock):
     low = fc.Response(200, {"Rate-Limit-Available": "100"}, json.dumps(load("event_with_ranges.json")).encode())
     t = FakeTransport(clock, {"E1": low, "E2": load("event_with_ranges.json")})

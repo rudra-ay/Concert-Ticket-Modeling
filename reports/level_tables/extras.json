@@ -1,0 +1,26 @@
+{
+  "H5f_unrestricted": {
+    "b_log_pv365": 0.015485638552332993,
+    "se_log_pv365": 0.02975475695685016,
+    "b_log_cap_sold": -0.0943538486441436,
+    "se_log_cap_sold": 0.027639696268074852,
+    "b_sum": -0.07886821009181061,
+    "p_equal_opposite": 0.05510850128497375,
+    "n": 9461,
+    "clusters": 158
+  },
+  "H1a_metros": 146,
+  "coverage_venue_pct_sample": 96.4,
+  "preliminary": [],
+  "tour_units": {
+    "keys_with_split_label": 63,
+    "rows_with_split_label": 3807,
+    "keys_with_2plus_units_in_sample": 53,
+    "rows_in_keys_with_2plus_units": 3614,
+    "max_unit_span_years": 1.8672142368240932
+  },
+  "split_moves": {
+    "sample_rows_changed_split": 1476,
+    "artist_ids_changed_split": 23
+  }
+}

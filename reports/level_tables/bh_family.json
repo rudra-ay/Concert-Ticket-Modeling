@@ -1,0 +1,46 @@
+{
+  "family": [
+    "H1a",
+    "H1b",
+    "H1c",
+    "H2a",
+    "H2b",
+    "H3",
+    "H4",
+    "H5w",
+    "H5o",
+    "H6a",
+    "H6b",
+    "H7a",
+    "H7b",
+    "H7c",
+    "H8b",
+    "H10"
+  ],
+  "excluded": {
+    "H5": "regressor is OUTCOME (capacity configured in response to demand): reported as an association",
+    "H5f": "uses the OUTCOME regressor tickets per show: reported as an association",
+    "H8a": "fewer than 10 artists carry the contrast (task-5 power table: 7): descriptive",
+    "H9": "genre is fixed per artist (between-artist only, MDE ~42%): descriptive table (level_genre.py)",
+    "H11": "set-list popularity: not testable (setlist.fm needs permission)"
+  },
+  "pending_p1": {},
+  "q": {
+    "H1a": 0.008,
+    "H1b": 0.44377277824258393,
+    "H1c": 0.02204627371016118,
+    "H2a": 0.05157336901292314,
+    "H2b": 0.16541058660867355,
+    "H3": 0.9477500037942236,
+    "H4": 3.5033695475875524e-10,
+    "H5w": 0.16541058660867355,
+    "H5o": 0.5844230163242567,
+    "H7a": 0.3003230491404292,
+    "H7b": 0.43927272727272726,
+    "H7c": 0.0721478817385638,
+    "H10": 0.3543826101048397,
+    "H8b": 0.008,
+    "H6a": 0.9477500037942236,
+    "H6b": 0.9477500037942236
+  }
+}

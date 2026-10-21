@@ -48,8 +48,11 @@ DERIVED = {
     "dup_figure_copy": ("", "same artist, identical gross and tickets on a different date: a figure copied between rows; all copies excluded"),
     "cpi_deflate_date": ("date", "date used for deflation: show_date, or the midpoint of the aggregate's span for aggregate units"),
     "tour_n_analysis": ("shows", "tour_key's rows in the analysis sample"),
-    "price_rel_tour": ("log points", "**Target (primary relative).** log_avg_price_real − median over the same tour_key (analysis sample; tours with ≥ 5 shows). Recompute in folds with `analysis.targets.tour_relative_target(df, train_mask)`"),
-    "year_bucket_5": ("year", "calendar 5-year bucket (2015 = 2015–19)"),
+    "price_rel_tour": ("log points", "**Target (primary relative).** log_avg_price_real − median over the same tour_unit (analysis sample; units with ≥ 5 shows). Recompute in folds with `analysis.targets.tour_relative_target(df, train_mask)`"),
+    "year_bucket_5": ("year", "5-year bucket of the tour unit's START year (2015 = tours starting 2015–19); amendment A2"),
+    "tour_unit": ("", "tour_key, split for keys spanning > 2 years (list articles, residencies, long pauses) at gaps > 90 days, then by calendar year: `<tour_key>#<k>`. Use for tour FE. Counts of split keys/rows are reported over analysis_sample in reports/level_findings.md (Method); a key can carry a split label yet have one unit inside the sample"),
+    "tour_unit_start_year": ("year", "first show date year of the tour unit (all played rows)"),
+    "tour_unit_span_days": ("days", "first to last show of the tour unit"),
     "price_rel_artist_era": ("log points", "**Target (secondary relative).** log_avg_price_real − median over the same artist_key × year_bucket_5 (cells ≥ 5 and artist_keys ≥ 5 shows). Use with year FE. `analysis.targets.artist_era_target`"),
     "is_cancelled_spine": ("", "status_note contains 'cancel' (available for all rows, unlike tour_context's is_cancelled)"),
     "usd_assumed_non_us": ("", "gross_currency USD at a non-US show: a bare `$` may be local dollars (AU/CA/MX/...)"),
@@ -186,7 +189,7 @@ DECISIONS = """\
 - **`artist_split`:** a deterministic md5 hash (salt `seatprice-v1`) of `split_key` into train/valid/test, 70/15/15 **of performer groups**. `split_key` is the connected component of artist_ids linked by a shared QID or headliner wikilink, a Wikidata P527/P463/P361 edge whose both ends are artists in the data (band ↔ member, duo ↔ partner), or a manual relation (`data/manual/artist_relations.csv`). So a performer's solo, band and package shows always share a split (tested for every pair in review 1). Row shares differ from 70/15/15 because performers have very different show counts.
 - **Artist-level statistics use `artist_key`**, not artist_id: one key per performer for single-headliner acts (QID inherited through the headliner wikilink; manual aliases merged), and its own key for each co-headline package.
 - **CPI for aggregates:** deflated at the midpoint month of the stand (`cpi_deflate_date`), not the first night.
-- **Relative targets (review 1, item 5):** `price_rel_tour` (minus the same tour's median; tours with ≥ 5 sample shows) is the primary relative target. `price_rel_artist_era` (minus the artist_key × calendar 5-year median; cells and artist_keys with ≥ 5 shows) is the secondary one, always used with year FE. Both have ~0 correlation with career time. `price_rel_artist_median` is DEPRECATED (corr 0.65 with year relative to the artist's median year).
+- **Relative targets (review 1, item 5):** `price_rel_tour` (minus the same tour unit's median; units with ≥ 5 sample shows) is the primary relative target. `price_rel_artist_era` (minus the artist_key × tour-start 5-year median; cells and artist_keys with ≥ 5 shows) is the secondary one, always used with year FE. Both have ~0 correlation with career time. `price_rel_artist_median` is DEPRECATED (corr 0.65 with year relative to the artist's median year).
 - **Relative-target leakage:** all relative targets subtract a median that includes the row itself and (for era/artist versions) later shows. With the by-performer split this can't leak across splits, but within-split CV must recompute the median on training rows only (`tour_relative_target`, `artist_era_target`, `artist_relative_target` take a fit mask). They are targets only, never features.
 """
 

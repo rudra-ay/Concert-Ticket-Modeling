@@ -1,0 +1,275 @@
+{
+  "features_numeric": [
+    "year",
+    "month",
+    "day_of_week",
+    "is_fri_sat",
+    "is_sunday",
+    "is_dec_holiday_period",
+    "is_public_holiday",
+    "is_holiday_eve",
+    "is_long_weekend",
+    "is_us_holiday_weekend",
+    "is_us_summer_break_proxy",
+    "is_us",
+    "metro_log_population",
+    "metro_median_hh_income",
+    "metro_college_share",
+    "lat",
+    "lon",
+    "capacity",
+    "capacity_max",
+    "venue_age",
+    "career_start_year",
+    "years_active_at_show",
+    "n_tours_started_before_show_year",
+    "log_lb_listens",
+    "log_lb_users",
+    "n_headliners",
+    "n_openers",
+    "co_headliner_flag",
+    "festival_flag",
+    "tour_show_number",
+    "days_since_tour_start",
+    "days_since_prev_show_artist",
+    "is_first_show_of_tour"
+  ],
+  "features_categorical": [
+    "country_final",
+    "continent",
+    "venue_type",
+    "indoor_outdoor",
+    "genre_coarse_final",
+    "artist_type",
+    "artist_country_iso2",
+    "season_local"
+  ],
+  "n": {
+    "train": 15293,
+    "valid": 3694,
+    "test": 4336
+  },
+  "artist_keys": {
+    "train": 204,
+    "valid": 42,
+    "test": 58
+  },
+  "valid_gbm_vs_best_baseline": {
+    "baseline": "genre \u00d7 5-yr median",
+    "mae_diff_log": -0.07624543323510918,
+    "ci95": [
+      -0.1390698199974835,
+      -0.03416573098326563
+    ]
+  },
+  "gbm_vs_best_baseline": {
+    "baseline": "year median",
+    "mae_diff_log": -0.07261475060355593,
+    "ci95": [
+      -0.11495304032662919,
+      -0.04257918005802678
+    ]
+  },
+  "y": {
+    "best_params": {
+      "learning_rate": 0.08,
+      "max_iter": 100,
+      "max_leaf_nodes": 63,
+      "min_samples_leaf": 20,
+      "l2_regularization": 1.0
+    },
+    "valid": {
+      "GBM": {
+        "mae_log": 0.2116688810125944,
+        "medae_log": 0.16116754643623254,
+        "mae_usd": 22.266143070949873,
+        "medae_usd": 15.326696356465085,
+        "n": 3694
+      },
+      "global median": {
+        "mae_log": 0.45737488338121224,
+        "medae_log": 0.385603264332667,
+        "mae_usd": 44.81831132925195,
+        "medae_usd": 42.505090021296496,
+        "n": 3694
+      },
+      "year median": {
+        "mae_log": 0.302434655951293,
+        "medae_log": 0.221590938123017,
+        "mae_usd": 32.216433581667886,
+        "medae_usd": 22.77015679019062,
+        "n": 3694
+      },
+      "genre \u00d7 5-yr median": {
+        "mae_log": 0.2879143142477036,
+        "medae_log": 0.20877859975696422,
+        "mae_usd": 31.31343172366359,
+        "medae_usd": 20.06494533826148,
+        "n": 3694
+      },
+      "reference: artist's own LOO median (not available for unseen artists)": {
+        "mae_log": 0.33819501888434755,
+        "medae_log": 0.2121857613133633,
+        "mae_usd": 34.52300620554325,
+        "medae_usd": 21.73388158823063,
+        "n": 3691
+      }
+    },
+    "test": {
+      "GBM": {
+        "mae_log": 0.27451579187237224,
+        "medae_log": 0.21814589865919443,
+        "mae_usd": 34.13835489458997,
+        "medae_usd": 24.07763869982738,
+        "n": 4336
+      },
+      "global median": {
+        "mae_log": 0.37061422602200783,
+        "medae_log": 0.31669836150953934,
+        "mae_usd": 44.95995253890586,
+        "medae_usd": 33.637596915093,
+        "n": 4336
+      },
+      "year median": {
+        "mae_log": 0.34713054247592817,
+        "medae_log": 0.2794702693824731,
+        "mae_usd": 42.55791074054089,
+        "medae_usd": 30.838495383122066,
+        "n": 4336
+      },
+      "genre \u00d7 5-yr median": {
+        "mae_log": 0.35654023951098707,
+        "medae_log": 0.288908776617685,
+        "mae_usd": 43.63745281397404,
+        "medae_usd": 32.40508670613488,
+        "n": 4336
+      },
+      "reference: artist's own LOO median (not available for unseen artists)": {
+        "mae_log": 0.22555349576626071,
+        "medae_log": 0.1554525638280655,
+        "mae_usd": 28.486807769913455,
+        "medae_usd": 17.954109581652716,
+        "n": 4335
+      }
+    }
+  },
+  "valid_rel_gbm_vs_zero": {
+    "mae_diff_log": -0.017896872010413734,
+    "ci95": [
+      -0.024823773513994778,
+      -0.01283137352534905
+    ]
+  },
+  "rel_gbm_vs_zero": {
+    "mae_diff_log": -0.019068852683875426,
+    "ci95": [
+      -0.025874309024095404,
+      -0.008744156523100115
+    ]
+  },
+  "price_rel_tour": {
+    "best_params": {
+      "learning_rate": 0.01,
+      "max_iter": 300,
+      "max_leaf_nodes": 63,
+      "min_samples_leaf": 20,
+      "l2_regularization": 1.0
+    },
+    "valid": {
+      "GBM": {
+        "mae_log": 0.1233842294161939,
+        "medae_log": 0.08136930307522734,
+        "mae_usd": 14.242139545882418,
+        "medae_usd": 7.582930926870853,
+        "n": 3624
+      },
+      "zero (tour median)": {
+        "mae_log": 0.14128110142660763,
+        "medae_log": 0.08629630183361936,
+        "mae_usd": 16.75358032694492,
+        "medae_usd": 7.894840804731248,
+        "n": 3624
+      }
+    },
+    "test": {
+      "GBM": {
+        "mae_log": 0.15174868346823986,
+        "medae_log": 0.10381787411373931,
+        "mae_usd": 19.405800511710765,
+        "medae_usd": 11.513395967835216,
+        "n": 4253
+      },
+      "zero (tour median)": {
+        "mae_log": 0.17081753615211528,
+        "medae_log": 0.11702183456191095,
+        "mae_usd": 22.057457791468103,
+        "medae_usd": 13.257647028793095,
+        "n": 4253
+      }
+    }
+  },
+  "shap_top10": {
+    "year": 0.2051,
+    "years_active_at_show": 0.1126,
+    "log_lb_listens": 0.053,
+    "capacity": 0.0399,
+    "metro_log_population": 0.029,
+    "career_start_year": 0.0276,
+    "n_tours_started_before_show_year": 0.0264,
+    "venue_type": 0.026,
+    "genre_coarse_final": 0.0257,
+    "log_lb_users": 0.0242
+  },
+  "interactions_top10": [
+    {
+      "a": "years_active_at_show",
+      "b": "log_lb_listens",
+      "mean_abs_interaction": 0.0337
+    },
+    {
+      "a": "year",
+      "b": "years_active_at_show",
+      "mean_abs_interaction": 0.0269
+    },
+    {
+      "a": "years_active_at_show",
+      "b": "capacity",
+      "mean_abs_interaction": 0.0247
+    },
+    {
+      "a": "year",
+      "b": "log_lb_listens",
+      "mean_abs_interaction": 0.0228
+    },
+    {
+      "a": "years_active_at_show",
+      "b": "genre_coarse_final",
+      "mean_abs_interaction": 0.0165
+    },
+    {
+      "a": "years_active_at_show",
+      "b": "log_lb_users",
+      "mean_abs_interaction": 0.0161
+    },
+    {
+      "a": "capacity",
+      "b": "venue_type",
+      "mean_abs_interaction": 0.0161
+    },
+    {
+      "a": "log_lb_listens",
+      "b": "log_lb_users",
+      "mean_abs_interaction": 0.0158
+    },
+    {
+      "a": "year",
+      "b": "capacity",
+      "mean_abs_interaction": 0.0151
+    },
+    {
+      "a": "log_lb_listens",
+      "b": "genre_coarse_final",
+      "mean_abs_interaction": 0.0132
+    }
+  ]
+}

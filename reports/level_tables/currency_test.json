@@ -1,0 +1,215 @@
+{
+  "n": 4940,
+  "tours": 512,
+  "by_country": {
+    "CA": 1477,
+    "GB": 817,
+    "DE": 569,
+    "AU": 533,
+    "FR": 211,
+    "ES": 195,
+    "IT": 190,
+    "NL": 145,
+    "IE": 143,
+    "BE": 130,
+    "CH": 110,
+    "JP": 106,
+    "NZ": 100,
+    "AT": 67,
+    "PT": 54,
+    "FI": 44,
+    "SG": 35,
+    "GR": 10,
+    "LU": 4
+  },
+  "currencies": [
+    "ATS",
+    "AUD",
+    "BEF",
+    "CAD",
+    "CHF",
+    "DEM",
+    "ESP",
+    "EUR",
+    "FIM",
+    "FRF",
+    "GBP",
+    "GRD",
+    "IEP",
+    "ITL",
+    "JPY",
+    "NLG",
+    "NZD",
+    "PTE",
+    "SGD"
+  ],
+  "pooled": {
+    "theta": -0.20232895701802686,
+    "se": 0.11510966685575814,
+    "ci95_t": [
+      -0.4297871756044178,
+      0.025129261568364064
+    ],
+    "ci95_wild": [
+      -0.4508743045488387,
+      0.041769091054601165
+    ],
+    "p": 0.08085112164542914,
+    "control_slope": -0.6570958873336837,
+    "control_slope_se": 0.07407237685218904,
+    "n": 4845,
+    "G": 150
+  },
+  "per_country": {
+    "AU": {
+      "theta": -0.46269834605306465,
+      "se": 0.1468271496779456,
+      "ci95_t": [
+        -0.7528307286592286,
+        -0.17256596344690073
+      ],
+      "p": 0.0019651478284230268,
+      "n_rows": 533
+    },
+    "CA": {
+      "theta": 0.008442517704764237,
+      "se": 0.12113851974242613,
+      "ci95_t": [
+        -0.23092879363203217,
+        0.24781382904156063
+      ],
+      "p": 0.9445313889380688,
+      "n_rows": 1477
+    },
+    "NZ+SG": {
+      "theta": -0.22286266638470986,
+      "se": 0.26705247638854357,
+      "ci95_t": [
+        -0.7505618788630037,
+        0.304836546093584
+      ],
+      "p": 0.40531973210168826,
+      "n_rows": 135
+    }
+  },
+  "sd_log_fx_within_country": {
+    "AT": 0.112,
+    "AU": 0.144,
+    "BE": 0.109,
+    "CA": 0.115,
+    "CH": 0.112,
+    "DE": 0.11,
+    "ES": 0.118,
+    "FI": 0.11,
+    "FR": 0.109,
+    "GB": 0.131,
+    "GR": 0.12,
+    "IE": 0.11,
+    "IT": 0.192,
+    "JP": 0.157,
+    "LU": 0.108,
+    "NL": 0.11,
+    "NZ": 0.109,
+    "PT": 0.107,
+    "SG": 0.038
+  },
+  "peso_hk_tw_rows_rel_gt_0.7": [
+    {
+      "show_id": "5-seconds-of-summer__2016-03-10__asiaworldexpo-hall-10",
+      "country_final": "HK",
+      "avg_price_usd": 149.309,
+      "price_rel_tour": 1.059,
+      "price_rel_artist_era": 1.086,
+      "log_fx": 2.049
+    },
+    {
+      "show_id": "ariana-grande__2015-10-23__complejo-al-rio",
+      "country_final": "AR",
+      "avg_price_usd": 119.55,
+      "price_rel_tour": 0.872,
+      "price_rel_artist_era": 0.443,
+      "log_fx": NaN
+    },
+    {
+      "show_id": "justin-bieber__2011-10-01__foro-sol",
+      "country_final": "MX",
+      "avg_price_usd": 63.814,
+      "price_rel_tour": 0.767,
+      "price_rel_artist_era": -0.012,
+      "log_fx": 2.598
+    },
+    {
+      "show_id": "luis-miguel__2006-03-10__mayan-palace",
+      "country_final": "MX",
+      "avg_price_usd": 265.59,
+      "price_rel_tour": 1.221,
+      "price_rel_artist_era": 1.239,
+      "log_fx": 2.375
+    },
+    {
+      "show_id": "luis-miguel__2006-03-17__mayan-palace",
+      "country_final": "MX",
+      "avg_price_usd": 226.973,
+      "price_rel_tour": 1.064,
+      "price_rel_artist_era": 1.082,
+      "log_fx": 2.375
+    },
+    {
+      "show_id": "luis-miguel__2006-03-25__mayan-palace",
+      "country_final": "MX",
+      "avg_price_usd": 265.59,
+      "price_rel_tour": 1.221,
+      "price_rel_artist_era": 1.239,
+      "log_fx": 2.375
+    },
+    {
+      "show_id": "luis-miguel__2006-04-03__el-foro",
+      "country_final": "MX",
+      "avg_price_usd": 178.812,
+      "price_rel_tour": 0.817,
+      "price_rel_artist_era": 0.835,
+      "log_fx": 2.402
+    },
+    {
+      "show_id": "luis-miguel__2006-04-04__estadio-caliente",
+      "country_final": "MX",
+      "avg_price_usd": 221.325,
+      "price_rel_tour": 1.03,
+      "price_rel_artist_era": 1.048,
+      "log_fx": 2.402
+    },
+    {
+      "show_id": "luis-miguel__2013-11-14__plaza-de-toros-la-macarena",
+      "country_final": "CO",
+      "avg_price_usd": 182.627,
+      "price_rel_tour": 0.603,
+      "price_rel_artist_era": 0.709,
+      "log_fx": NaN
+    },
+    {
+      "show_id": "madonna__2016-02-04__taipei-arena",
+      "country_final": "TW",
+      "avg_price_usd": 291.657,
+      "price_rel_tour": 0.711,
+      "price_rel_artist_era": 0.655,
+      "log_fx": 3.504
+    },
+    {
+      "show_id": "one-direction__2015-03-18__asiaworldarena",
+      "country_final": "HK",
+      "avg_price_usd": 234.658,
+      "price_rel_tour": 1.034,
+      "price_rel_artist_era": 1.034,
+      "log_fx": 2.049
+    },
+    {
+      "show_id": "paul-mccartney__1993-11-25__autodromo-hermanos-rodriguez",
+      "country_final": "MX",
+      "avg_price_usd": 64.414,
+      "price_rel_tour": 0.785,
+      "price_rel_artist_era": 0.785,
+      "log_fx": 1.147
+    }
+  ],
+  "peso_hk_tw_rows_total": 663
+}
