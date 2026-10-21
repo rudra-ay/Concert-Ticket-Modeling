@@ -1,0 +1,117 @@
+show_id,group,action,reason
+fleetwood-mac__1976-07-18__mile-high-stadium,1976-07-18|fleetwood-mac__1976-07-18__mile-high-stadium,drop,1976 multi-act stadium bill; no single headliner
+santana__1976-07-18__mile-high-stadium,1976-07-18|fleetwood-mac__1976-07-18__mile-high-stadium,drop,1976 multi-act stadium bill; no single headliner
+the-rolling-stones__1978-07-13__louisiana-superdome,1978-07-13|the-rolling-stones__1978-07-13__louisiana-superdome,keep,Van Halen opened (named in the Rolling Stones row opening acts)
+van-halen__1978-07-13__the-superdome,1978-07-13|the-rolling-stones__1978-07-13__louisiana-superdome,drop,Van Halen opened (named in the Rolling Stones row opening acts)
+santana__1978-07-26__oaklandalameda-county-coliseum,1978-07-26|santana__1978-07-26__oaklandalameda-county-coliseum,drop,Santana opened (named in the Rolling Stones row opening acts)
+the-rolling-stones__1978-07-26__oaklandalameda-county-coliseum,1978-07-26|santana__1978-07-26__oaklandalameda-county-coliseum,keep,Santana opened (named in the Rolling Stones row opening acts)
+black-sabbath__1978-09-04__cape-cod-coliseum,1978-09-04|black-sabbath__1978-09-04__cape-cod-coliseum,keep,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+van-halen__1978-09-04__cape-cod-coliseum,1978-09-04|black-sabbath__1978-09-04__cape-cod-coliseum,drop,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+black-sabbath__1978-09-05__cumberland-county-civic-center,1978-09-05|black-sabbath__1978-09-05__cumberland-county-civic-center,keep,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+van-halen__1978-09-05__cumberland-county-civic-center,1978-09-05|black-sabbath__1978-09-05__cumberland-county-civic-center,drop,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+black-sabbath__1978-09-08__convention-center,1978-09-08|black-sabbath__1978-09-08__convention-center,keep,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+van-halen__1978-09-08__convention-center,1978-09-08|black-sabbath__1978-09-08__convention-center,drop,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+black-sabbath__1978-09-09__civic-center,1978-09-09|black-sabbath__1978-09-09__civic-center,keep,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+van-halen__1978-09-09__civic-center,1978-09-09|black-sabbath__1978-09-09__civic-center,drop,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+black-sabbath__1978-09-10__coliseum,1978-09-10|black-sabbath__1978-09-10__coliseum,keep,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+van-halen__1978-09-10__coliseum,1978-09-10|black-sabbath__1978-09-10__coliseum,drop,Van Halen opened for Black Sabbath on the 1978 Never Say Die! tour
+rush__1981-12-02__municipal-auditorium,1981-12-02|rush__1981-12-02__municipal-auditorium,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-02__nashville-municipal-auditorium,1981-12-02|rush__1981-12-02__municipal-auditorium,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-04__charlotte-coliseum,1981-12-04|rush__1981-12-04__charlotte-coliseum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-04__coliseum,1981-12-04|rush__1981-12-04__charlotte-coliseum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-06__coliseum,1981-12-06|rush__1981-12-06__coliseum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-06__greensboro-coliseum,1981-12-06|rush__1981-12-06__coliseum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-11__greenville-memorial-auditorium,1981-12-11|rush__1981-12-11__greenville-memorial-auditorium,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1981-12-11__memorial-auditorium,1981-12-11|rush__1981-12-11__greenville-memorial-auditorium,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+journey__1982-06-12__cotton-bowl,1982-06-12|journey__1982-06-12__cotton-bowl,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+santana__1982-06-12__cotton-bowl,1982-06-12|journey__1982-06-12__cotton-bowl,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+journey__1982-06-13__astrodome,1982-06-13|journey__1982-06-13__astrodome,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+santana__1982-06-13__houston-astrodome,1982-06-13|journey__1982-06-13__astrodome,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+journey__1982-06-26__oaklandalameda-county-coliseum,1982-06-26|journey__1982-06-26__oaklandalameda-county-coliseum,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+santana__1982-06-26__oaklandalameda-county-coliseum,1982-06-26|journey__1982-06-26__oaklandalameda-county-coliseum,drop,1982 co-billed stadium shows; headliner not identifiable from the tables
+santana__1982-08-28__cal-expo-amphitheatre,1982-08-28|santana__1982-08-28__cal-expo-amphitheatre,drop,1982 multi-act bill; headliner not identifiable from the tables
+the-police__1982-08-28__cal-expo-amphitheatre,1982-08-28|santana__1982-08-28__cal-expo-amphitheatre,drop,1982 multi-act bill; headliner not identifiable from the tables
+santana__1990-10-20__cotton-bowl,1990-10-20|santana__1990-10-20__cotton-bowl,drop,Santana opened (named in the ZZ Top row opening acts)
+zz-top__1990-10-20__cotton-bowl,1990-10-20|santana__1990-10-20__cotton-bowl,keep,Santana opened (named in the ZZ Top row opening acts)
+rush__1992-06-03__irvine-meadows-amphitheatre,1992-06-03|rush__1992-06-03__irvine-meadows-amphitheatre,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1992-06-03__irvine-meadows-amphitheatre__2,1992-06-03|rush__1992-06-03__irvine-meadows-amphitheatre,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1992-06-26__pine-knob-music-theater,1992-06-26|rush__1992-06-26__pine-knob-music-theater,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1992-06-26__pine-knob-music-theatre,1992-06-26|rush__1992-06-26__pine-knob-music-theater,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-01-22__civic-center,1994-01-22|rush__1994-01-22__civic-center,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-01-22__pensacola-civic-center,1994-01-22|rush__1994-01-22__civic-center,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-02-05__arrowhead-pond,1994-02-05|rush__1994-02-05__arrowhead-pond,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-02-05__arrowhead-pond-of-anaheim,1994-02-05|rush__1994-02-05__arrowhead-pond,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-02-07__san-diego-sports-arena,1994-02-07|rush__1994-02-07__san-diego-sports-arena,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-02-07__sports-arena,1994-02-07|rush__1994-02-07__san-diego-sports-arena,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-03-11__centrum,1994-03-11|rush__1994-03-11__centrum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-03-11__worcester-centrum,1994-03-11|rush__1994-03-11__centrum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-03-23__coliseum,1994-03-23|rush__1994-03-23__coliseum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-03-23__richfield-coliseum,1994-03-23|rush__1994-03-23__coliseum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-04__arena,1994-04-04|rush__1994-04-04__arena,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-04__st-louis-arena,1994-04-04|rush__1994-04-04__arena,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-22__brendan-byrne-arena,1994-04-22|rush__1994-04-22__brendan-byrne-arena,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-22__meadowlands-arena,1994-04-22|rush__1994-04-22__brendan-byrne-arena,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-23__nassau-coliseum,1994-04-23|rush__1994-04-23__nassau-coliseum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-23__nassau-veterans-memorial-coliseum,1994-04-23|rush__1994-04-23__nassau-coliseum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-29__spectrum,1994-04-29|rush__1994-04-29__spectrum,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1994-04-29__the-spectrum,1994-04-29|rush__1994-04-29__spectrum,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-10-25__palace,1996-10-25|rush__1996-10-25__palace,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-10-25__the-palace-of-auburn-hills,1996-10-25|rush__1996-10-25__palace,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-11-06__corestates-center,1996-11-06|rush__1996-11-06__corestates-center,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-11-06__corestates-center__2,1996-11-06|rush__1996-11-06__corestates-center,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-11-10__civic-center,1996-11-10|rush__1996-11-10__civic-center,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1996-11-10__hartford-civic-center,1996-11-10|rush__1996-11-10__civic-center,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1997-05-08__blockbuster-desert-sky-pavilion,1997-05-08|rush__1997-05-08__blockbuster-desert-sky-pavilion,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1997-05-08__desert-sky-pavilion,1997-05-08|rush__1997-05-08__blockbuster-desert-sky-pavilion,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1997-06-17__pine-knob-music-theater,1997-06-17|rush__1997-06-17__pine-knob-music-theater,keep,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+rush__1997-06-17__pine-knob-music-theatre,1997-06-17|rush__1997-06-17__pine-knob-music-theater,drop,same Rush show listed twice in the article under venue-name variants; kept the copy with a resolved venue
+garbage__2001-10-15__united-center,2001-10-15|garbage__2001-10-15__united-center,drop,Garbage opened (named in the U2 row opening acts)
+u2__2001-10-15__united-center,2001-10-15|garbage__2001-10-15__united-center,keep,Garbage opened (named in the U2 row opening acts)
+garbage__2001-11-30__philips-arena,2001-11-30|garbage__2001-11-30__philips-arena,drop,Garbage opened (named in the U2 row opening acts)
+u2__2001-11-30__philips-arena,2001-11-30|garbage__2001-11-30__philips-arena,keep,Garbage opened (named in the U2 row opening acts)
+garbage__2001-12-01__ice-palace,2001-12-01|garbage__2001-12-01__ice-palace,drop,Garbage opened (named in the U2 row opening acts)
+u2__2001-12-01__ice-palace,2001-12-01|garbage__2001-12-01__ice-palace,keep,Garbage opened (named in the U2 row opening acts)
+garbage__2001-12-02__american-airlines-arena,2001-12-02|garbage__2001-12-02__american-airlines-arena,drop,Garbage opened (named in the U2 row opening acts)
+u2__2001-12-02__american-airlines-arena,2001-12-02|garbage__2001-12-02__american-airlines-arena,keep,Garbage opened (named in the U2 row opening acts)
+avril-lavigne__2008-08-02__saratoga-performing-arts-center,2008-08-02|avril-lavigne__2008-08-02__saratoga-performing-arts-center,drop,"each row lists the other side of the bill; co-bill, headliner not verifiable"
+jonas-brothers__2008-08-02__saratoga-performing-arts-center,2008-08-02|avril-lavigne__2008-08-02__saratoga-performing-arts-center,drop,"each row lists the other side of the bill; co-bill, headliner not verifiable"
+kenny-chesney__2009-07-09__commonwealth-stadium,2009-07-09|kenny-chesney__2009-07-09__commonwealth-stadium,drop,"Swift is not in the Chesney row openers and Swift row lists her own openers; co-bill, headliner not verifiable"
+taylor-swift__2009-07-09__commonwealth-stadium,2009-07-09|kenny-chesney__2009-07-09__commonwealth-stadium,drop,"Swift is not in the Chesney row openers and Swift row lists her own openers; co-bill, headliner not verifiable"
+jason-aldean__2015-05-02__levi-s-stadium,2015-05-02|jason-aldean__2015-05-02__levi-s-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-05-02__levi-s-stadium,2015-05-02|jason-aldean__2015-05-02__levi-s-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-05-16__at-t-stadium,2015-05-16|jason-aldean__2015-05-16__at-t-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-05-16__at-t-stadium,2015-05-16|jason-aldean__2015-05-16__at-t-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+foo-fighters__2015-06-05__zeppelinfeld,2015-06-05|foo-fighters__2015-06-05__zeppelinfeld,drop,festival total (Rock im Park / Rock am Ring 2015): both excluded
+marilyn-manson__2015-06-05__rock-im-ring,2015-06-05|foo-fighters__2015-06-05__zeppelinfeld,drop,festival total (Rock im Park / Rock am Ring 2015): both excluded
+jason-aldean__2015-06-20__lambeau-field,2015-06-20|jason-aldean__2015-06-20__lambeau-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-06-20__lambeau-field,2015-06-20|jason-aldean__2015-06-20__lambeau-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-06-27__centurylink-field,2015-06-27|jason-aldean__2015-06-27__centurylink-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-06-27__centurylink-field,2015-06-27|jason-aldean__2015-06-27__centurylink-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+marilyn-manson__2015-07-10__the-joint,2015-07-10|marilyn-manson__2015-07-10__the-joint,drop,"co-headlined End Times tour: kept under the co-headline act key, solo Marilyn Manson copy dropped"
+the-smashing-pumpkins-and-marilyn-manson__2015-07-10__the-joint,2015-07-10|marilyn-manson__2015-07-10__the-joint,keep,"co-headlined End Times tour: kept under the co-headline act key, solo Marilyn Manson copy dropped"
+jason-aldean__2015-07-18__target-field,2015-07-18|jason-aldean__2015-07-18__target-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-07-18__target-field,2015-07-18|jason-aldean__2015-07-18__target-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-07-25__rose-bowl,2015-07-25|jason-aldean__2015-07-25__rose-bowl,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-07-25__rose-bowl,2015-07-25|jason-aldean__2015-07-25__rose-bowl,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-08-01__arrowhead-stadium,2015-08-01|jason-aldean__2015-08-01__arrowhead-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-08-01__arrowhead-stadium,2015-08-01|jason-aldean__2015-08-01__arrowhead-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+marilyn-manson__2015-08-05__dte-energy-music-theatre,2015-08-05|marilyn-manson__2015-08-05__dte-energy-music-theatre,drop,"co-headlined End Times tour: kept under the co-headline act key, solo Marilyn Manson copy dropped"
+the-smashing-pumpkins-and-marilyn-manson__2015-08-05__dte-energy-music-theatre,2015-08-05|marilyn-manson__2015-08-05__dte-energy-music-theatre,keep,"co-headlined End Times tour: kept under the co-headline act key, solo Marilyn Manson copy dropped"
+jason-aldean__2015-08-08__sports-authority-field,2015-08-08|jason-aldean__2015-08-08__sports-authority-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-08-08__sports-authority-field-at-mile-high,2015-08-08|jason-aldean__2015-08-08__sports-authority-field,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-08-15__metlife-stadium,2015-08-15|jason-aldean__2015-08-15__metlife-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-08-15__metlife-stadium,2015-08-15|jason-aldean__2015-08-15__metlife-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+jason-aldean__2015-08-28__gillette-stadium,2015-08-28|jason-aldean__2015-08-28__gillette-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+kenny-chesney__2015-08-28__gillette-stadium,2015-08-28|jason-aldean__2015-08-28__gillette-stadium,drop,co-headlined 2015 stadium dates (both articles report the same gross); no single headliner
+katy-perry__2015-10-03__hipodromo-argentino-de-palermo,2015-10-03|katy-perry__2015-10-03__hipodromo-argentino-de-palermo,keep,Lali opened (named in the Katy Perry row opening acts)
+lali__2015-10-03__hipodromo-de-palermo,2015-10-03|katy-perry__2015-10-03__hipodromo-argentino-de-palermo,drop,Lali opened (named in the Katy Perry row opening acts)
+guns-n-roses__2017-09-06__sun-bowl,2017-09-06|guns-n-roses__2017-09-06__sun-bowl,keep,ZZ Top opened (named in the Guns N' Roses row opening acts)
+zz-top__2017-09-06__sun-bowl,2017-09-06|guns-n-roses__2017-09-06__sun-bowl,drop,ZZ Top opened (named in the Guns N' Roses row opening acts)
+guns-n-roses__2017-09-08__alamodome,2017-09-08|guns-n-roses__2017-09-08__alamodome,keep,ZZ Top opened (named in the Guns N' Roses row opening acts)
+zz-top__2017-09-08__alamodome,2017-09-08|guns-n-roses__2017-09-08__alamodome,drop,ZZ Top opened (named in the Guns N' Roses row opening acts)
+imagine-dragons__2023-08-14__pge-narodowy,2023-08-14|imagine-dragons__2023-08-14__pge-narodowy,keep,AJR opened (named in the Imagine Dragons row opening acts)
+list-of-2023-ajr-festival-shows__2023-08-14__stadion-narodowy,2023-08-14|imagine-dragons__2023-08-14__pge-narodowy,drop,AJR opened (named in the Imagine Dragons row opening acts)
+imagine-dragons__2023-08-16__vingis-park,2023-08-16|imagine-dragons__2023-08-16__vingis-park,keep,AJR opened (named in the Imagine Dragons row opening acts)
+list-of-2023-ajr-festival-shows__2023-08-16__vingis-park,2023-08-16|imagine-dragons__2023-08-16__vingis-park,drop,AJR opened (named in the Imagine Dragons row opening acts)
+imagine-dragons__2023-08-29__yarkon-park,2023-08-29|imagine-dragons__2023-08-29__yarkon-park,keep,AJR opened (named in the Imagine Dragons row opening acts)
+list-of-2023-ajr-festival-shows__2023-08-29__yarkon-park,2023-08-29|imagine-dragons__2023-08-29__yarkon-park,drop,AJR opened (named in the Imagine Dragons row opening acts)

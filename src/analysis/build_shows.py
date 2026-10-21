@@ -29,11 +29,14 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from analysis.targets import (  # noqa: E402
     ROOT,
+    artist_era_target,
     artist_keys,
     artist_relative_target,
     artist_split,
     deflate,
     load_cpi,
+    tour_relative_target,
+    wikidata_group_edges,
 )
 
 INTERIM = ROOT / "data/interim"
@@ -96,34 +99,158 @@ def aggregate_groups(b: pd.DataFrame) -> pd.Series:
     return pd.Series(gid, index=b.index, dtype="string")
 
 
-def boxoffice_duplicates(b: pd.DataFrame) -> pd.DataFrame:
-    """Flag priced rows whose gross is repeated for another artist at the same venue and date.
+DEDUPE_CSV = ROOT / "data/manual/boxoffice_dedupe.csv"
+RELATIONS_CSV = ROOT / "data/manual/artist_relations.csv"
+NON_PERFORMERS_CSV = ROOT / "data/manual/non_performers.csv"
 
-    Keep the headliner: the row whose opening-act cell names the other artist(s).
-    Otherwise keep the artist with the most priced shows (ties: artist_id order).
+
+TOUR_GAP_DAYS = 90
+TOUR_MAX_SPAN_DAYS = 730
+
+
+def tour_units(df: pd.DataFrame) -> pd.Series:
+    """Split tour_key into tour units (review 1, amendment A1).
+
+    Some tour_keys are list articles or residencies spanning many years (Phish concert tours,
+    List of Yes tours, Billy Joel at MSG), and some real tours have long pauses (No Filter's
+    COVID break). Rule: only tour_keys spanning more than 2 years are split. Within such a key,
+    start a new unit after a gap of more than 90 days between consecutive played shows; a unit
+    that still spans more than 2 years (a residency with regular dates) is split by calendar
+    year. Tours of up to 2 years are left whole, so between-leg breaks stay within the tour. Units are named `<tour_key>#<k>` when a
+    key is split, else the tour_key itself.
     """
-    out = pd.DataFrame(index=b.index, data={"dup_boxoffice_group": pd.NA, "dup_boxoffice_drop": False,
-                                             "dup_boxoffice_resolved": pd.NA})
-    out["dup_boxoffice_group"] = out["dup_boxoffice_group"].astype("string")
-    out["dup_boxoffice_resolved"] = out["dup_boxoffice_resolved"].astype("string")
-    p = b[b["avg_price_usd"].notna()]
-    n_priced = p.groupby("artist_id").size()
-    dup = p[p.duplicated(["venue_id", "show_date", "gross_usd"], keep=False)]
-    for _, g in dup.groupby(["venue_id", "show_date", "gross_usd"]):
-        heads = []
-        for i, r in g.iterrows():
-            acts = _norm(r["opening_acts_raw"]) + _norm(r["opening_acts_wikilinks"])
-            if any(_norm(o) and _norm(o) in acts for o in g.drop(index=i)["artist_name"]):
-                heads.append(i)
-        if len(heads) == 1:
-            keep, how = heads[0], "opener_named"
+    out = pd.Series(pd.NA, index=df.index, dtype="string")
+    d = df[df["tour_key"].notna()].sort_values(["tour_key", "show_date"])
+    for key, g in d.groupby("tour_key", sort=False):
+        if (g["show_date"].max() - g["show_date"].min()).days <= TOUR_MAX_SPAN_DAYS:
+            out.loc[g.index] = key  # an ordinary tour, breaks between legs included
+            continue
+        gap = g["show_date"].diff().dt.days.fillna(0)
+        seg = (gap > TOUR_GAP_DAYS).cumsum()
+        labels = seg.astype(str)
+        for sid, sg in g.groupby(seg):
+            if (sg["show_date"].max() - sg["show_date"].min()).days > TOUR_MAX_SPAN_DAYS:
+                labels.loc[sg.index] = f"{sid}y" + sg["show_date"].dt.year.astype(str)
+        if labels.nunique() == 1:
+            out.loc[g.index] = key
         else:
-            keep = sorted(g.index, key=lambda i: (-n_priced[g.at[i, "artist_id"]], g.at[i, "artist_id"]))[0]
-            how = "most_priced_shows"
-        out.loc[g.index, "dup_boxoffice_group"] = g.at[keep, "show_id"]
-        out.loc[g.index, "dup_boxoffice_resolved"] = how
-        out.loc[g.index.drop(keep), "dup_boxoffice_drop"] = True
+            codes = pd.Series(pd.factorize(labels)[0] + 1, index=g.index)
+            out.loc[g.index] = key + "#" + codes.astype(str)
     return out
+
+
+def country_final(df: pd.DataFrame) -> pd.Series:
+    """Spine country_iso2, else the venue's Wikidata P17 country, else the spine country text.
+
+    The spine text is sometimes doubled ("Germany Germany"); repeated halves are collapsed
+    before the pycountry lookup.
+    """
+    import pycountry
+
+    alias = {"England": "GB", "Scotland": "GB", "Wales": "GB", "Northern Ireland": "GB", "UK": "GB",
+             "USA": "US", "U.S.": "US", "United States": "US", "South Korea": "KR", "Russia": "RU"}
+
+    def from_text(x: object) -> object:
+        if not isinstance(x, str) or not x.strip():
+            return pd.NA
+        w = x.split()
+        if len(w) % 2 == 0 and w[: len(w) // 2] == w[len(w) // 2:]:
+            x = " ".join(w[: len(w) // 2])
+        x = alias.get(x.strip(), x.strip())
+        if len(x) == 2 and x.isupper():
+            return x
+        try:
+            return pycountry.countries.lookup(x).alpha_2
+        except LookupError:
+            return pd.NA
+
+    venue = df["venue_country_iso2"] if "venue_country_iso2" in df else pd.Series(pd.NA, index=df.index)
+    city_suffix = df["city"].str.rsplit(",", n=1).str[1].where(df["city"].str.contains(",", na=False))
+    us_metro = df["metro_scope"].isin(["metropolitan", "micropolitan", "us_outside_cbsa", "us_unmatched"]) \
+        if "metro_scope" in df else pd.Series(False, index=df.index)
+    return (df["country_iso2"].astype("string").fillna(venue.astype("string"))
+            .fillna(df["country"].map(from_text).astype("string"))
+            .fillna(city_suffix.map(from_text).astype("string"))
+            .fillna(pd.Series("US", index=df.index, dtype="string").where(us_metro)))
+
+
+def detect_duplicate_groups(b: pd.DataFrame) -> pd.Series:
+    """Group id for priced rows that report the same show twice; NA otherwise.
+
+    Two priced rows on the same date are the same box office line when the gross is
+    exactly equal, or tickets_sold is equal (> 1,000) and the gross is within 5%.
+    Venue names are not compared (variants like "Superdome" / "Louisiana Superdome"
+    defeat venue_id). Groups are connected components of such pairs, named
+    "<date>|<first show_id>".
+    """
+    p = b[b["avg_price_usd"].notna() & b["gross_usd"].gt(10_000)]
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for _, g in p.groupby("show_date"):
+        if len(g) < 2:
+            continue
+        idx = g.index.to_numpy()
+        gross = g["gross_usd"].to_numpy()
+        tix = g["tickets_sold"].to_numpy()
+        for i in range(len(idx)):
+            for j in range(i + 1, len(idx)):
+                same_gross = gross[i] == gross[j]
+                same_tix = tix[i] == tix[j] and tix[i] > 1000 and abs(gross[i] - gross[j]) <= 0.05 * max(gross[i], gross[j])
+                if same_gross or same_tix:
+                    parent[find(idx[i])] = find(idx[j])
+    comp = pd.Series({i: find(i) for i in parent})
+    sizes = comp.value_counts()
+    comp = comp[comp.map(sizes) > 1]
+    names = {root: f"{b.at[root, 'show_date']:%Y-%m-%d}|{min(b.loc[comp.index[comp == root], 'show_id'])}"
+             for root in comp.unique()}
+    return comp.map(names).reindex(b.index).astype("string")
+
+
+def boxoffice_duplicates(b: pd.DataFrame) -> pd.DataFrame:
+    """Resolve duplicate box office lines with the hand-checked decisions in data/manual/boxoffice_dedupe.csv.
+
+    Groups the CSV doesn't cover fall back to: keep the row whose opening-act cell
+    names every other artist in the group, else drop all rows; they are flagged
+    dup_unreviewed (a test requires zero).
+    """
+    gid = detect_duplicate_groups(b)
+    out = pd.DataFrame(index=b.index, data={"dup_boxoffice_group": gid, "dup_boxoffice_drop": False,
+                                             "dup_boxoffice_resolved": pd.Series(pd.NA, index=b.index, dtype="string"),
+                                             "dup_unreviewed": False})
+    manual = pd.read_csv(DEDUPE_CSV).set_index("show_id") if DEDUPE_CSV.exists() else pd.DataFrame(columns=["action", "reason"])
+    for _, g in b[gid.notna()].groupby(gid[gid.notna()]):
+        if g["show_id"].isin(manual.index).all():
+            for i, sid in g["show_id"].items():
+                out.at[i, "dup_boxoffice_drop"] = manual.at[sid, "action"] == "drop"
+                out.at[i, "dup_boxoffice_resolved"] = manual.at[sid, "reason"]
+            continue
+        heads = [i for i, r in g.iterrows()
+                 if all(_norm(o) and _norm(o) in _norm(r["opening_acts_raw"]) + _norm(r["opening_acts_wikilinks"])
+                        for o in g.drop(index=i)["artist_name"])]
+        keep = heads[0] if len(heads) == 1 and g["artist_id"].nunique() == len(g) else None
+        for i in g.index:
+            out.at[i, "dup_boxoffice_drop"] = i != keep
+            out.at[i, "dup_boxoffice_resolved"] = "unreviewed fallback"
+            out.at[i, "dup_unreviewed"] = True
+    return out
+
+
+def figure_copies(b: pd.DataFrame, dup_group: pd.Series) -> pd.Series:
+    """Same artist, identical gross AND tickets on different dates: a figure copied between rows.
+
+    Which date the figure belongs to can't be told, so every row of such a set is flagged.
+    """
+    p = b[b["avg_price_usd"].notna() & dup_group.isna()]
+    m = p.duplicated(["artist_key", "gross_usd", "tickets_sold"], keep=False) & \
+        ~p.duplicated(["artist_key", "show_date", "gross_usd"], keep=False)
+    return pd.Series(False, index=b.index).mask(b.index.isin(p.index[m]), True)
 
 
 def join_features(df: pd.DataFrame, coverage: dict, origin: dict) -> pd.DataFrame:
@@ -208,29 +335,51 @@ def build() -> tuple[pd.DataFrame, dict, dict]:
     derived("tickets_available_per_show", df["tickets_available"] / k)
     derived("gross_usd_per_show", df["gross_usd"] / k)
 
-    # --- duplicates, cancellation, currency ---------------------------------
-    for c, v in boxoffice_duplicates(df).items():
-        derived(c, v)
     derived("is_cancelled_spine", df["status_note"].fillna("").str.contains("cancel"))
-    derived("usd_assumed_non_us", df["gross_currency"].eq("USD") & df["country_iso2"].notna()
-            & ~df["country_iso2"].isin(["US", "PR"]))
-
-    # --- CPI ------------------------------------------------------------------
-    cpi, imputed = load_cpi()
-    real, idx = deflate(df["avg_price_usd"], df["show_date"], cpi, CPI_BASE_MONTH)
-    derived("cpi_base_month", CPI_BASE_MONTH.strftime("%Y-%m"))
-    derived("cpi_show_month", idx)
-    months = df["show_date"].dt.to_period("M").dt.to_timestamp()
-    derived("cpi_month_imputed", months.map(imputed).astype("boolean"))
-    derived("avg_price_real", real)
-    derived("gross_usd_real", deflate(df["gross_usd"], df["show_date"], cpi, CPI_BASE_MONTH)[0])
-    derived("gross_usd_real_per_show", df["gross_usd_real"] / k)
-    derived("log_avg_price_real", np.log(df["avg_price_real"].where(df["avg_price_real"] > 0)))
-    derived("log_avg_price_nominal", np.log(df["avg_price_usd"].where(df["avg_price_usd"] > 0)))
 
     # --- feature tables -------------------------------------------------------
     coverage: dict = {}
     df = join_features(df, coverage, origin)
+
+    # --- country: spine ISO2, else the venue's Wikidata country, else the spine text ---
+    cf = country_final(df)
+    derived("country_final", cf)
+    venue_c = df["venue_country_iso2"] if "venue_country_iso2" in df else pd.Series(pd.NA, index=df.index)
+    derived("country_final_source", pd.Series(np.select(
+        [df["country_iso2"].notna(), venue_c.notna(), cf.notna()], ["spine", "venue_wikidata", "spine_text_city_or_metro"],
+        default="unknown"), index=df.index).astype("string"))
+    derived("usd_assumed_non_us", df["gross_currency"].eq("USD") & cf.notna() & ~cf.isin(["US", "PR"]).fillna(False))
+
+    # --- artist identity (needed by dedupe and the split) -----------------------
+    relations = pd.read_csv(RELATIONS_CSV) if RELATIONS_CSV.exists() else \
+        pd.DataFrame(columns=["artist_id_a", "artist_id_b", "relation"])
+    split_key, artist_key = artist_keys(df, wikidata_group_edges(df["artist_qid"]), relations)
+    derived("split_key", split_key)
+    derived("artist_key", artist_key)
+    derived("artist_split", artist_split(df["split_key"]))
+    nonperf = pd.read_csv(NON_PERFORMERS_CSV) if NON_PERFORMERS_CSV.exists() else pd.DataFrame(columns=["artist_id"])
+    derived("non_performer", df["artist_id"].isin(nonperf["artist_id"]))
+
+    # --- duplicates -------------------------------------------------------------
+    for c, v in boxoffice_duplicates(df).items():
+        derived(c, v)
+    derived("dup_figure_copy", figure_copies(df, df["dup_boxoffice_group"]))
+
+    # --- CPI: aggregates are deflated at the midpoint of their date span ----------
+    cpi, imputed = load_cpi()
+    mid = df["show_date"] + (df["agg_last_date"] - df["show_date"]) / 2
+    deflate_date = mid.where(df["is_aggregate_unit"] & df["agg_last_date"].notna(), df["show_date"])
+    derived("cpi_deflate_date", deflate_date)
+    real, idx = deflate(df["avg_price_usd"], deflate_date, cpi, CPI_BASE_MONTH)
+    derived("cpi_base_month", CPI_BASE_MONTH.strftime("%Y-%m"))
+    derived("cpi_show_month", idx)
+    months = deflate_date.dt.to_period("M").dt.to_timestamp()
+    derived("cpi_month_imputed", months.map(imputed).astype("boolean"))
+    derived("avg_price_real", real)
+    derived("gross_usd_real", deflate(df["gross_usd"], deflate_date, cpi, CPI_BASE_MONTH)[0])
+    derived("gross_usd_real_per_show", df["gross_usd_real"] / k)
+    derived("log_avg_price_real", np.log(df["avg_price_real"].where(df["avg_price_real"] > 0)))
+    derived("log_avg_price_nominal", np.log(df["avg_price_usd"].where(df["avg_price_usd"] > 0)))
 
     # --- analysis sample ------------------------------------------------------
     cancelled = df["is_cancelled_spine"] | df.get("is_cancelled", pd.Series(False, index=df.index)).fillna(False).astype(bool)
@@ -241,7 +390,9 @@ def build() -> tuple[pd.DataFrame, dict, dict]:
         ("tour_outlier", df["avg_price_flag"].eq("tour_outlier")),
         ("cancelled", cancelled),
         ("dup_boxoffice", df["dup_boxoffice_drop"]),
+        ("dup_figure_copy", df["dup_figure_copy"]),
         ("aggregate_multi_venue", df["is_aggregate_unit"] & (df["agg_n_venues"].fillna(1) > 1)),
+        ("non_performer", df["non_performer"]),
         ("no_cpi", ~np.isfinite(df["log_avg_price_real"])),
     ]
     reason = pd.Series(pd.NA, index=df.index, dtype="string")
@@ -250,17 +401,21 @@ def build() -> tuple[pd.DataFrame, dict, dict]:
     derived("analysis_exclusion_reason", reason)
     derived("analysis_sample", reason.isna())
 
-    # --- targets and split ------------------------------------------------------
+    # --- targets ------------------------------------------------------------------
     s = df["analysis_sample"]
-    split_key, artist_key = artist_keys(df)
-    derived("split_key", split_key)
-    derived("artist_key", artist_key)
-    derived("artist_split", artist_split(df["split_key"]))
     med = df.loc[s].groupby("artist_key")["log_avg_price_real"].median()
     cnt = df.loc[s].groupby("artist_key").size()
     derived("artist_median_log_price_real", df["artist_key"].map(med).where(s))
     derived("artist_n_analysis", df["artist_key"].map(cnt).fillna(0).astype(int))
-    derived("price_rel_artist_median", artist_relative_target(df, s).where(s))
+    derived("price_rel_artist_median", artist_relative_target(df, s).where(s))  # DEPRECATED: career-time confounded
+    derived("tour_unit", tour_units(df))
+    unit_start = df.groupby("tour_unit")["show_date"].transform("min")
+    derived("tour_unit_start_year", unit_start.dt.year.astype("Int64"))
+    derived("tour_unit_span_days", (df.groupby("tour_unit")["show_date"].transform("max") - unit_start).dt.days.astype("Int64"))
+    derived("tour_n_analysis", df["tour_unit"].map(df.loc[s].groupby("tour_unit").size()).fillna(0).astype(int))
+    derived("price_rel_tour", tour_relative_target(df, s).where(s))
+    derived("year_bucket_5", (df["tour_unit_start_year"] // 5) * 5)
+    derived("price_rel_artist_era", artist_era_target(df, s).where(s))
     derived("unit_n_shows", df["aggregate_n_shows"].where(s).astype("Int64"))
 
     # per-column coverage of each feature table on the analysis sample

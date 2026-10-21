@@ -227,57 +227,9 @@
   "derived",
   "gross_usd_per_show"
  ],
- "dup_boxoffice_group": [
-  "derived",
-  "dup_boxoffice_group"
- ],
- "dup_boxoffice_drop": [
-  "derived",
-  "dup_boxoffice_drop"
- ],
- "dup_boxoffice_resolved": [
-  "derived",
-  "dup_boxoffice_resolved"
- ],
  "is_cancelled_spine": [
   "derived",
   "is_cancelled_spine"
- ],
- "usd_assumed_non_us": [
-  "derived",
-  "usd_assumed_non_us"
- ],
- "cpi_base_month": [
-  "derived",
-  "cpi_base_month"
- ],
- "cpi_show_month": [
-  "derived",
-  "cpi_show_month"
- ],
- "cpi_month_imputed": [
-  "derived",
-  "cpi_month_imputed"
- ],
- "avg_price_real": [
-  "derived",
-  "avg_price_real"
- ],
- "gross_usd_real": [
-  "derived",
-  "gross_usd_real"
- ],
- "gross_usd_real_per_show": [
-  "derived",
-  "gross_usd_real_per_show"
- ],
- "log_avg_price_real": [
-  "derived",
-  "log_avg_price_real"
- ],
- "log_avg_price_nominal": [
-  "derived",
-  "log_avg_price_nominal"
  ],
  "n_shows_in_spine": [
   "artist",
@@ -419,6 +371,10 @@
   "venue",
   "venue_wikilink"
  ],
+ "venue_city_wikilink": [
+  "venue",
+  "city_wikilink"
+ ],
  "n_shows": [
   "venue",
   "n_shows"
@@ -426,6 +382,10 @@
  "n_priced_shows": [
   "venue",
   "n_priced_shows"
+ ],
+ "city_qid": [
+  "venue",
+  "city_qid"
  ],
  "venue_enwiki_title": [
   "venue",
@@ -519,9 +479,21 @@
   "venue",
   "capacity_all"
  ],
+ "venue_type_source": [
+  "venue",
+  "venue_type_source"
+ ],
+ "city_matches_wikidata": [
+  "venue",
+  "city_matches_wikidata"
+ ],
  "qid_n_spine_cities": [
   "venue",
   "qid_n_spine_cities"
+ ],
+ "km_city_to_venue": [
+  "venue",
+  "km_city_to_venue"
  ],
  "link_ambiguous": [
   "venue",
@@ -983,10 +955,6 @@
   "weather",
   "wx_query_lon"
  ],
- "wx_status": [
-  "weather",
-  "wx_status"
- ],
  "wx_coord_reuse_km": [
   "weather",
   "wx_coord_reuse_km"
@@ -1063,6 +1031,10 @@
   "weather",
   "wx_eve_hours_covered"
  ],
+ "wx_status": [
+  "weather",
+  "wx_status"
+ ],
  "wx_known_at_purchase": [
   "weather",
   "wx_known_at_purchase"
@@ -1071,13 +1043,17 @@
   "derived",
   "has_weather"
  ],
- "analysis_exclusion_reason": [
+ "country_final": [
   "derived",
-  "analysis_exclusion_reason"
+  "country_final"
  ],
- "analysis_sample": [
+ "country_final_source": [
   "derived",
-  "analysis_sample"
+  "country_final_source"
+ ],
+ "usd_assumed_non_us": [
+  "derived",
+  "usd_assumed_non_us"
  ],
  "split_key": [
   "derived",
@@ -1091,6 +1067,74 @@
   "derived",
   "artist_split"
  ],
+ "non_performer": [
+  "derived",
+  "non_performer"
+ ],
+ "dup_boxoffice_group": [
+  "derived",
+  "dup_boxoffice_group"
+ ],
+ "dup_boxoffice_drop": [
+  "derived",
+  "dup_boxoffice_drop"
+ ],
+ "dup_boxoffice_resolved": [
+  "derived",
+  "dup_boxoffice_resolved"
+ ],
+ "dup_unreviewed": [
+  "derived",
+  "dup_unreviewed"
+ ],
+ "dup_figure_copy": [
+  "derived",
+  "dup_figure_copy"
+ ],
+ "cpi_deflate_date": [
+  "derived",
+  "cpi_deflate_date"
+ ],
+ "cpi_base_month": [
+  "derived",
+  "cpi_base_month"
+ ],
+ "cpi_show_month": [
+  "derived",
+  "cpi_show_month"
+ ],
+ "cpi_month_imputed": [
+  "derived",
+  "cpi_month_imputed"
+ ],
+ "avg_price_real": [
+  "derived",
+  "avg_price_real"
+ ],
+ "gross_usd_real": [
+  "derived",
+  "gross_usd_real"
+ ],
+ "gross_usd_real_per_show": [
+  "derived",
+  "gross_usd_real_per_show"
+ ],
+ "log_avg_price_real": [
+  "derived",
+  "log_avg_price_real"
+ ],
+ "log_avg_price_nominal": [
+  "derived",
+  "log_avg_price_nominal"
+ ],
+ "analysis_exclusion_reason": [
+  "derived",
+  "analysis_exclusion_reason"
+ ],
+ "analysis_sample": [
+  "derived",
+  "analysis_sample"
+ ],
  "artist_median_log_price_real": [
   "derived",
   "artist_median_log_price_real"
@@ -1102,6 +1146,34 @@
  "price_rel_artist_median": [
   "derived",
   "price_rel_artist_median"
+ ],
+ "tour_unit": [
+  "derived",
+  "tour_unit"
+ ],
+ "tour_unit_start_year": [
+  "derived",
+  "tour_unit_start_year"
+ ],
+ "tour_unit_span_days": [
+  "derived",
+  "tour_unit_span_days"
+ ],
+ "tour_n_analysis": [
+  "derived",
+  "tour_n_analysis"
+ ],
+ "price_rel_tour": [
+  "derived",
+  "price_rel_tour"
+ ],
+ "year_bucket_5": [
+  "derived",
+  "year_bucket_5"
+ ],
+ "price_rel_artist_era": [
+  "derived",
+  "price_rel_artist_era"
  ],
  "unit_n_shows": [
   "derived",

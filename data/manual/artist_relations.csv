@@ -1,0 +1,7 @@
+artist_id_a,artist_id_b,relation,reason
+nsync,justin-timberlake,member,Justin Timberlake was a member of NSYNC (nsync has no Wikidata QID in the data)
+queen,queen-adam-lambert,member,Queen + Adam Lambert is a Queen lineup (no P527/P463 edge to Queen)
+queen,queen-paul-rodgers,member,Queen + Paul Rodgers is a Queen lineup
+jonas-brothers,demi-lovato-and-nick-jonas,member,Nick Jonas is a Jonas Brother (he is not an artist_id in the data so no Wikidata edge)
+selena-gomez,selena-gomez-the-scene,member,Selena Gomez fronted Selena Gomez & the Scene (band has no QID in the data)
+the-eagles,eagles,alias,same band; the-eagles has no QID (lower-case 'the Eagles' wikilink)

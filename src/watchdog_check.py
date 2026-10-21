@@ -30,7 +30,7 @@ SCRATCH = "/private/tmp/claude-501/-Users-rudraayyagari-ticket-tracker/ae575fa5-
 
 NOW = time.time()
 MIN_FREE_GB = 50
-PUSHBACK = re.compile(r"\bBLOCKED\b|\bBlocked\b|BlockedError|\b(403|429)\b|challenge", re.I)
+PUSHBACK = re.compile(r"\bBLOCKED\b|\bBlocked\b|BlockedError|(?<![\d.])(403|429)(?![\d.])|challenge", re.I)
 
 results: list[tuple[str, str, str]] = []  # (level, key, message)
 
@@ -229,6 +229,10 @@ def check_feature(name: str, script: str, progress_pat: str, done_pat: str, outp
         else:
             add("OK", f"{key}.alive", f"{name}: pid {alive}, log {fmt_age(la)}; {prog}")
         return
+    if name == "features_venue" and venue_paused_by_chain():
+        add("OK", f"{key}.paused", f"{name}: paused at PRICED_MILESTONE by features_chain (resumes after bill); "
+            f"last progress {prog!r}")
+        return
     if last_match(lines, done_pat):
         missing = [o for o in outputs if age(INTERIM / o) is None or age(INTERIM / o) > (la or 0) + 900]
         if missing:
@@ -258,6 +262,42 @@ def last_request_by_pid() -> dict[int, float]:
         for _, en, pid in read_req_log(path):
             last[pid] = max(last.get(pid, 0.0), en)
     return last
+
+
+CHAIN_LOG = LOGS / "features_chain.log"
+
+
+def venue_paused_by_chain() -> bool:
+    """features_chain pauses the venue job at PRICED_MILESTONE and resumes it after bill."""
+    lines = tail(CHAIN_LOG, 50)
+    i_pause = max((i for i, ln in enumerate(lines) if "milestone reached; pausing venue job" in ln), default=-1)
+    i_resume = max((i for i, ln in enumerate(lines) if "venue: remainder beyond the milestone" in ln), default=-1)
+    return i_pause > i_resume
+
+
+def check_bad_responses() -> None:
+    """Context collectors save any challenge/403/429/unrecognised 2xx response here and stop for good."""
+    d = RAW / "_bad_responses"
+    files = sorted((f for f in d.glob("*") if f.is_file()), key=lambda f: f.stat().st_mtime) if d.is_dir() else []
+    if files:
+        add("ALERT", "context.bad_response", f"{len(files)} saved bad response(s) in data/raw/_bad_responses, newest "
+            f"{files[-1].name} {fmt_age(age(files[-1]))}: a context job stopped on pushback or an unknown page")
+    else:
+        add("OK", "context.bad_response", "no saved bad responses")
+
+
+def check_chain() -> None:
+    lines = tail(CHAIN_LOG, 50)
+    if not lines:
+        return
+    alive = py_pids("src/features_chain.py")
+    step = lines[-1]
+    if alive:
+        add("OK", "chain.alive", f"features_chain: pid {alive}; last step {step!r}")
+    elif re.search(r"venue finished rc=0", step):
+        add("OK", "chain.done", "features_chain: complete (venue finished rc=0)")
+    else:
+        add("ALERT", "chain.dead", f"features_chain: process gone before finishing; last line {step!r}")
 
 
 def check_spacing() -> None:
@@ -335,7 +375,8 @@ def check_weather() -> None:
                 clusters.append(t)
         # no cross-process start-time lock for Open-Meteo (spacing is in-process), so completion gaps
         # are the best measure available: flag any under 5 s for a look
-        completion_gaps(key, clusters, "archive-api.open-meteo.com", alert=True)
+        if not (LOGS / "requests_archive-api.open-meteo.com.log").exists():  # exact starts are checked there
+            completion_gaps(key, clusters, "archive-api.open-meteo.com", alert=True)
     wp = age(INTERIM / "features_weather.parquet")
     add("OK", "weather.parquet", f"features_weather.parquet written {fmt_age(wp)}")
 
@@ -363,57 +404,155 @@ def check_rebrowser() -> None:
 
 
 # --- analyst (task 5) -----------------------------------------------------------------------
-ANALYST_START = dt.datetime(2026, 10, 19, 16, 20).timestamp()  # lead: analyst started task 5
-ANALYST_STALE_S = 45 * 60
-ANALYST_PATHS = [ROOT / "src" / "analysis", ROOT / "data" / "shows.parquet",
-                 ROOT / "data" / "DATA_DICTIONARY.md", ROOT / "reports" / "data_quality.md"]
+STALE_S = 45 * 60
+# agent -> (watch start, output paths/globs relative to ROOT). Alert when none changed for 45+ min
+# (counted from the later of the watch start and the newest change).
+AGENTS = {
+    "analyst": (dt.datetime(2026, 10, 19, 21, 1).timestamp(),  # task 6 (LEVEL); reset after session-limit gap
+                ["reports/level_findings.md", "reports/charts/level_*.png", "src/analysis"]),
+    "skeptic": (dt.datetime(2026, 10, 19, 21, 1).timestamp(),  # reset after session-limit gap
+                ["src/review", "reviews"]),
+}
 
 
-def check_analyst() -> None:
-    newest, newest_path, present = 0.0, None, []
-    for p in ANALYST_PATHS:
-        files = [p] if p.is_file() else [f for f in p.rglob("*") if f.is_file() and "__pycache__" not in f.parts] \
-            if p.is_dir() else []
-        if files:
-            present.append(p.relative_to(ROOT).as_posix())
-        for f in files:
-            m = f.stat().st_mtime
-            if m > newest:
-                newest, newest_path = m, f.relative_to(ROOT).as_posix()
-    ref = max(newest, ANALYST_START)
-    if NOW - ref > ANALYST_STALE_S:
-        what = f"newest change {newest_path} {fmt_age(NOW - newest)}" if newest_path else \
-            f"none of its outputs exist {fmt_age(NOW - ANALYST_START)} after start"
-        add("ALERT", "analyst.stale", f"analyst: no output change for 45+ min ({what}); "
-            f"ask lead whether the analyst has reported")
-    else:
-        add("OK", "analyst.active", f"analyst: present {present or 'none yet'}; newest "
-            f"{newest_path or '-'} {fmt_age(NOW - newest) if newest else ''}")
+def _agent_files(spec: str) -> list[Path]:
+    out = []
+    for p in ROOT.glob(spec) if any(c in spec for c in "*?[") else [ROOT / spec]:
+        if p.is_file():
+            out.append(p)
+        elif p.is_dir():
+            out += [f for f in p.rglob("*") if f.is_file() and "__pycache__" not in f.parts]
+    return out
 
 
-# --- caffeinate (keeps the Mac awake until the lead creates PROJECT_DONE) --------------------
-PROJECT_DONE = LOGS / "PROJECT_DONE"
+def check_agents() -> None:
+    for agent, (start, specs) in AGENTS.items():
+        newest, newest_path = 0.0, None
+        for spec in specs:
+            for f in _agent_files(spec):
+                m = f.stat().st_mtime
+                if m > newest:
+                    newest, newest_path = m, f.relative_to(ROOT).as_posix()
+        if NOW - max(newest, start) > STALE_S:
+            what = (f"newest change {newest_path} {fmt_age(NOW - newest)}" if newest > start else
+                    f"nothing written since watch start {fmt_age(NOW - start)}")
+            add("ALERT", f"{agent}.stale", f"{agent}: no output change for 45+ min ({what}); "
+                f"ask lead whether {agent} has reported")
+        else:
+            add("OK", f"{agent}.active", f"{agent}: newest {newest_path or '-'} "
+                f"{fmt_age(NOW - newest) if newest else ''}")
 
 
-def check_caffeinate() -> None:
-    caf = pids(r"^caffeinate -dims")
-    stopper = pids(r"caffeinate_stopper\.sh")
-    if PROJECT_DONE.exists():
-        add("OK", "caffeinate.done", f"caffeinate: PROJECT_DONE exists; caffeinate {'still running ' + str(caf) if caf else 'stopped'}")
+# --- forward collector (launchd, daily 09:15 local) -------------------------------------------
+FWD_LABEL = "com.ticketpriceresearch.forward-collector"
+FWD_FIRST_RUN = dt.date(2026, 10, 20)
+FWD_CHECK_AFTER = dt.time(9, 45)
+FWD_EXIT = {3: "API key missing", 5: "API key rejected", 6: "stopped on HTTP 429 (report before the next run)"}
+
+
+def _state() -> dict:
+    try:
+        return json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def check_forward() -> None:
+    """Never runs daily/run/discover (they spend the Ticketmaster quota); `status` makes no API calls."""
+    now = dt.datetime.now()
+    out = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{FWD_LABEL}"],
+                         capture_output=True, text=True).stdout
+    if not out:
+        add("ALERT", "forward.launchd", f"forward: launchd job {FWD_LABEL} not loaded")
         return
-    if not caf:
-        add("ALERT", "caffeinate.dead", "caffeinate -dims is not running and PROJECT_DONE does not exist: the Mac can sleep")
+    runs = int(m.group(1)) if (m := re.search(r"\bruns = (\d+)", out)) else None
+    m = re.search(r"last exit code = (-?\d+)", out)
+    code = int(m.group(1)) if m else None
+    running = "state = running" in out
+    st = _state()
+    fwd = st.get("forward", {})
+    today = now.date().isoformat()
+    if now.date() < FWD_FIRST_RUN or now.time() < FWD_CHECK_AFTER:
+        add("OK", "forward.waiting", f"forward: next check after 09:45; launchd runs={runs}, last exit {code}")
+        return
+    if fwd.get("date") == today and fwd.get("ok"):
+        add("OK", "forward.daily", f"forward: today's run already verified (runs={fwd.get('runs')})")
+        return
+    if running:
+        add("OK", "forward.running", f"forward: daily run in progress (runs={runs})")
+        return
+    problems = []
+    if code is None:
+        problems.append("launchd job has never exited (no run today)")
+    elif code != 0:
+        problems.append(f"last exit code {code}: {FWD_EXIT.get(code, 'unexpected failure')}")
+    if fwd.get("date") != today:  # first evaluation today: runs must exceed yesterday's count
+        prev = fwd.get("runs", 0)
+        if runs is None or runs < prev + 1:
+            problems.append(f"launchd runs={runs}, expected >= {prev + 1}")
+    status = subprocess.run([str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "forward_collector.py"), "status"],
+                            capture_output=True, text=True, cwd=ROOT, timeout=120).stdout
+    snaps = int(m.group(1)) if (m := re.search(r"snapshots today: (\d+)", status)) else None
+    daily = next((ln.strip() for ln in status.splitlines() if re.search(r"#\d+ daily", ln)), "")
+    # the 09:15 PDT run lands on today's UTC date; after the UTC rollover (17:00 PDT) `snapshots today`
+    # counts the next UTC day, so only check the count before then
+    utc_rolled = dt.datetime.now(dt.timezone.utc).date().isoformat() != today
+    if not snaps and not utc_rolled:
+        problems.append(f"snapshots today: {snaps}")
+    if "stopped='" in daily or "UNFINISHED" in daily:
+        problems.append(f"newest daily run: {daily[:160]}")
+    if daily and f" {today}T" not in daily:
+        problems.append(f"newest daily run is not from {today}: {daily[:80]}")
+    logf = ROOT / "data" / "forward" / "logs" / f"forward_collector-{now:%Y-%m}.log"
+    bad = [ln for ln in tail(logf, 4000) if ln.startswith(today) and re.search(r"ERROR|stopped for today", ln)]
+    if bad:
+        problems.append(f"{len(bad)} ERROR/stopped lines today, last: {bad[-1][:160]}")
+    if problems:
+        add("ALERT", "forward.daily", "forward: " + "; ".join(problems))
     else:
-        add("OK", "caffeinate.alive", f"caffeinate pid {caf}")
-    if not stopper:
-        add("INFO", "caffeinate.stopper", "caffeinate_stopper.sh not running (caffeinate won't be stopped at PROJECT_DONE)")
+        lvl = "OK" if utc_rolled or 2900 <= (snaps or 0) <= 3100 else "INFO"
+        add(lvl, "forward.daily", f"forward: exit 0, runs={runs}, snapshots today {snaps} (expect ~2,900-3,100)")
+        if fwd.get("date") != today:
+            st["forward"] = {"date": today, "runs": runs, "ok": True}
+            STATE.write_text(json.dumps(st))
+
+
+# --- power, and the watchdog's own waker -----------------------------------------------------
+STATE = LOGS / "watchdog_state.json"
+WAKER_GRACE_S = 20 * 60
+
+
+def check_power() -> None:
     power = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
     if "Battery Power" in power:
         m = re.search(r"(\d+)%", power)
         pct = int(m.group(1)) if m else None
         lvl = "ALERT" if pct is not None and pct < 25 else "INFO"
-        add(lvl, "power.battery", f"on battery ({pct}%): caffeinate -s has no effect, closing the lid still sleeps "
-            f"the Mac, and an empty battery stops every job")
+        add(lvl, "power.battery", f"on battery ({pct}%): closing the lid sleeps the Mac and an empty battery "
+            f"stops every job")
+    else:
+        add("OK", "power.ac", "on AC power")
+
+
+def check_waker() -> None:
+    """The waker exits to wake the watchdog agent, which re-arms it. Missing for 20+ min means the
+    agent is not handling alerts (session limit, missed wake-up): only this log records them then."""
+    try:
+        state = json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        state = {}
+    if pids("watchdog_wake\\.sh"):
+        if state.get("waker_missing_since"):
+            add("INFO", "watchdog.waker", f"waker back; watchdog agent was unresponsive from "
+                f"{time.strftime('%H:%M', time.localtime(state['waker_missing_since']))}")
+        state.pop("waker_missing_since", None)
+    else:
+        since = state.setdefault("waker_missing_since", NOW)
+        if NOW - since > WAKER_GRACE_S:
+            add("ALERT", "watchdog.waker", f"watchdog agent not re-arming its waker since "
+                f"{time.strftime('%H:%M', time.localtime(since))} (paused or session limit); alerts in this "
+                f"log are not being acted on by watchdog")
+    STATE.write_text(json.dumps(state))
 
 
 # --- git staging, disk ---------------------------------------------------------------------
@@ -424,7 +563,11 @@ KEYLIKE = re.compile(r"(?i)(api[_-]?key|secret|token|passw(or)?d|auth)\s*[:=]\s*
 def check_git() -> None:
     names = subprocess.run(["git", "-C", str(ROOT), "diff", "--cached", "--name-only"],
                            capture_output=True, text=True).stdout.split()
-    bad = [n for n in names if re.search(r"(^|/)\.env(\.|$)|\.pem$|id_rsa|credentials", n)]
+    bad = [n for n in names if re.search(r"(^|/)\.env(\.|$)|\.pem$|id_rsa|credentials|^data/forward/", n)]
+    tracked = subprocess.run(["git", "-C", str(ROOT), "ls-files", "data/forward"], capture_output=True,
+                             text=True).stdout.split()
+    if tracked:
+        add("ALERT", "git.forward", f"git: data/forward is tracked (must stay out of git): {tracked[:3]}")
     diff = subprocess.run(["git", "-C", str(ROOT), "diff", "--cached", "--no-ext-diff", "-U0"],
                           capture_output=True, text=True).stdout
     hits = [ln[:120] for ln in diff.splitlines() if ln.startswith("+") and KEYLIKE.search(ln)]
@@ -447,7 +590,7 @@ def main() -> None:
                                      r"^transient network skips", ["features_artist.parquet"], 1200),
                lambda: check_feature("features_bill", "features_bill.py", r"^\S+\s+\d\.\d+$",
                                      r"farewell_flag", ["features_bill.parquet"], 1200),
-               check_spacing, check_venue_outputs, check_weather, check_rebrowser, check_analyst, check_caffeinate, check_git, check_disk):
+               check_spacing, check_venue_outputs, check_weather, check_rebrowser, check_agents, check_chain, check_bad_responses, check_forward, check_power, check_waker, check_git, check_disk):
         try:
             fn()
         except Exception as exc:  # a broken check must not hide the others

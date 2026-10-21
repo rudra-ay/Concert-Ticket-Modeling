@@ -25,6 +25,7 @@ ALIASES = {
     "venue_wikilink": ["venue_wikilink", "venue_title", "venue_page", "venue_wiki_title"],
     "city": ["city"],
     "country": ["country"],
+    "city_wikilink": ["city_wikilink"],
     "tour_title": ["tour_title", "tour", "tour_name", "source_title", "page_title", "title"],
     "opening_acts_raw": ["opening_acts_raw", "opening_act_raw", "opening_acts", "opening_act", "openers"],
 }
@@ -41,7 +42,7 @@ def load_spine() -> pd.DataFrame:
         src = next((n for n in names if n in raw.columns), None)
         out[norm] = raw[src] if src else pd.NA
     out["show_date"] = pd.to_datetime(out["show_date"], errors="coerce").dt.date
-    for col in ("artist_wikilink", "venue_wikilink"):
+    for col in ("artist_wikilink", "venue_wikilink", "city_wikilink"):
         out[col] = out[col].map(_clean_link)
     return out
 

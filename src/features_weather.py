@@ -29,7 +29,7 @@ import requests
 
 from features_metro import PLACE_COORD_OVERRIDES
 from features_metro import _haversine_km
-from context_http import RAW, BlockedError, load_spine, load_venue_coords, out_dir, polite_get, write_atomic
+from context_http import RAW, BlockedError, NetworkDown, TransientError, load_spine, load_venue_coords, out_dir, polite_get, write_atomic
 
 API = "https://archive-api.open-meteo.com/v1/archive"
 CACHE = RAW / "open_meteo"
@@ -158,17 +158,19 @@ def fetch_batch(start: dt.date, end: dt.date, locs: pd.DataFrame, ledger: QuotaL
               "start_date": str(start), "end_date": str(end), "daily": ",".join(DAILY), "hourly": ",".join(HOURLY),
               "timezone": "auto", "wind_speed_unit": "kmh"}
     try:
-        body = json.loads(polite_get(API, params=params))
+        body = json.loads(polite_get(API, params=params, expect_json=True))
     except requests.HTTPError as e:
         print(f"  skip {day} ({len(locs)} venues): {e}", flush=True)
         return
-    except (requests.Timeout, requests.ConnectionError) as e:
-        # Not pushback, so no retry in this run; nothing is cached, so a later run tries once more.
+    except (requests.Timeout, requests.ConnectionError, TransientError) as e:
+        # Transient (timeout, connection error, 5xx, empty body): skip this batch without retrying it now; it stays
+        # uncached, so a later pass picks it up. Back off 60 s, 120 s; three in a row -> NetworkDown.
         state["failures"] += 1
-        print(f"  network failure {state['failures']}/{MAX_CONSECUTIVE_FAILURES} on {day}: {type(e).__name__}",
-              flush=True)
+        print(f"  transient failure {state['failures']}/{MAX_CONSECUTIVE_FAILURES} on {day}: "
+              f"{type(e).__name__}: {str(e)[:160]}", flush=True)
         if state["failures"] >= MAX_CONSECUTIVE_FAILURES:
-            raise BlockedError(f"{state['failures']} consecutive network failures from Open-Meteo; stopping") from e
+            raise NetworkDown(f"{state['failures']} consecutive transient failures from Open-Meteo") from e
+        time.sleep(60 * 2 ** (state["failures"] - 1))
         return
     state["failures"] = 0
     results = body if isinstance(body, list) else [body]
@@ -289,7 +291,7 @@ def build(spine: pd.DataFrame, today: dt.date | None = None) -> tuple[pd.DataFra
             if phase == "priced":
                 write_table(_table(shows, last_available, "pending"), "checkpoint: priced slice complete")
                 print("PRIORITY SLICE DONE", flush=True)
-    except (QuotaExhausted, BlockedError) as e:
+    except (QuotaExhausted, BlockedError, NetworkDown) as e:
         stop_reason = f"{type(e).__name__}: {e}"
         print(f"STOPPED: {stop_reason}", flush=True)
 
@@ -310,7 +312,11 @@ def main() -> None:
     while True:
         stop_reason = run_once()
         if stop_reason and stop_reason.startswith("BlockedError"):
+            print("EXIT context_http.BlockedError", flush=True)
             raise SystemExit(2)  # pushback: a human should look before the next run
+        if stop_reason and stop_reason.startswith("NetworkDown"):
+            print("EXIT context_http.NetworkDown", flush=True)
+            raise SystemExit(4)  # the supervisor restarts once the host resolves again
         if not (until_done and stop_reason and stop_reason.startswith("QuotaExhausted")):
             return
         now = dt.datetime.now(dt.timezone.utc)

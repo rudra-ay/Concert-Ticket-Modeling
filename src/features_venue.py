@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import unicodedata
 
 import pandas as pd
 
@@ -28,6 +29,10 @@ TYPE_RULES = [
     (r"dome|domed|indoor stadium|covered stadium", "stadium", "indoor"),
     (r"stadium|ballpark|baseball park|cricket ground|football ground", "stadium", "outdoor"),
     (r"amphitheat|bandshell|band shell|music shed|outdoor (theat|venue)|pavilion", "amphitheatre", "outdoor"),
+    (r"baseball (venue|stadium)|cricket field|cricket ground|rugby (league |union )?(ground|stadium)|velodrome", "stadium", "outdoor"),
+    (r"fair ?ground|^fair$|\bsquare\b|plaza|public park|piazza", "festival ground", "outdoor"),
+    (r"ice rink|ice hockey arena|civic cent(er|re)|basketball arena|sports arena", "arena", "indoor"),
+    (r"casino|showroom|cabaret|^hotel$|resort", "theatre", "indoor"),
     (r"festival|fairground|racecourse|race ?track|speedway|park\b|polo field|showground|beach", "festival ground", "outdoor"),
     (r"arena|multi-purpose hall|multipurpose hall|indoor (sports )?venue|sports hall|events? cent(er|re)|"
      r"convention cent(er|re)|exhibition (cent(er|re)|hall)|coliseum|coliseo|palais|palacio|forum", "arena", "indoor"),
@@ -180,11 +185,13 @@ def build() -> pd.DataFrame:
               .groupby("venue_id", as_index=False)
               .agg(venue_name=("venue_name", "first"), city=("city", "first"), country=("country", "first"),
                    venue_wikilink=("venue_wikilink", lambda s: s.dropna().mode().iat[0] if s.notna().any() else None),
+                   city_wikilink=("city_wikilink", lambda s: s.dropna().mode().iat[0] if s.notna().any() else None),
                    n_shows=("show_id", "size"), n_priced_shows=("priced", "sum"))
               # Partial writes cover priced shows (the LEVEL sample) first, then the most shows.
               .sort_values(["n_priced_shows", "n_shows"], ascending=False, kind="stable"))
     n_priced_venues = int((venues["n_priced_shows"] > 0).sum())
     res = Resolver()
+    venues["city_qid"] = venues["city_wikilink"].map(lambda t: res.resolve(t)[1])
     rows = []
     for i, v in enumerate(venues.itertuples(index=False)):
         title, qid = res.resolve(v.venue_wikilink)
@@ -218,16 +225,98 @@ def build() -> pd.DataFrame:
     return _write(venues, rows)
 
 
+# Fallbacks when P31 classes are generic ("sports venue", "event venue", "building", …).
+NAME_RULES = [
+    (r"amphithea|amfitea|bowl\b|pavilion|music cent(er|re) at|outdoor", "amphitheatre", "outdoor"),
+    (r"stadium|stadion|estadio|est[aá]dio|stade|stadio|field\b|park\b|ballpark|dome\b", "stadium", None),
+    (r"arena|forum|coliseum|coliseo|palais|palacio|palasport|halle\b|hall\b.*(sport|event)|"
+     r"(event|entertainment|sports|civic|convention|exhibition) cent(er|re)", "arena", "indoor"),
+    (r"theat|teatro|th[eé][aâ]tre|auditorium|opera|music hall|concert hall|philharmon|symphony|playhouse", "theatre", "indoor"),
+    (r"club|ballroom|lounge|bar\b|tavern|social|room\b|house of blues|fillmore|9:30", "club", "indoor"),
+    (r"festival|fairground|showground|racecourse|speedway|common\b|meadow", "festival ground", "outdoor"),
+]
+
+
+def _norm(t) -> str:
+    return re.sub(r"[^a-z0-9 ]", " ", unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore")
+                  .decode().lower()).strip()
+
+
+def _place_chain(qid: str | None) -> tuple[set[str], list[str]]:
+    """QIDs and labels/aliases along P131 (≤ 6 levels), read from cache only."""
+    qids, labs, q = set(), [], qid
+    for _ in range(6):
+        ent = W.entity(q, cache_only=True) if q else None
+        if not ent:
+            break
+        qids.add(q)
+        labs.append(W.label(ent) or "")
+        labs += [a["value"] for a in ent.get("aliases", {}).get("en", [])]
+        q = W.first(ent, "P131")
+    return qids, [x for x in labs if x]
+
+
+def postprocess(out: pd.DataFrame) -> pd.DataFrame:
+    """Offline (cache-only) derived columns: type fallbacks, city-vs-Wikidata checks."""
+    if "venue_qid" not in out:
+        return out
+    labs = out["p31_classes"].fillna("").map(lambda s: [x.split(":", 1)[-1] for x in s.split("; ") if x])
+    vt, io, src = [], [], []
+    for lab, name, cap, qid in zip(labs, out["venue_name"], out["capacity"], out["venue_qid"]):
+        t, i, _ = classify(lab)
+        how = "wikidata_class" if t else None
+        if not t and isinstance(name, str):
+            for pat, nt, ni in NAME_RULES:
+                if re.search(pat, name, re.I):
+                    t, i, how = nt, ni, "name_keyword"
+                    break
+        if t == "stadium" and i is None:
+            i = "outdoor"
+        if not t and pd.notna(qid) and pd.notna(cap):
+            t, i, how = (("stadium", "outdoor") if cap >= 30000 else ("arena", "indoor") if cap >= 5000
+                         else ("theatre", "indoor")), None, "capacity_rule"
+            t, i = t
+        vt.append(t); io.append(i); src.append(how)
+    out["venue_type"], out["indoor_outdoor"], out["venue_type_source"] = vt, io, src
+
+    chains = {q: _place_chain(W.first(W.entity(q, cache_only=True), "P131"))
+              for q in out["venue_qid"].dropna().unique()}
+    city_qid = out["city_qid"] if "city_qid" in out else pd.Series(pd.NA, index=out.index)
+
+    def matches(city, cq, qid):
+        if pd.isna(qid) or qid not in chains:
+            return pd.NA
+        cqids, labs = chains[qid]
+        if isinstance(cq, str) and cq in cqids:
+            return True
+        c = _norm(city)
+        if c and any(c == x or (len(c) > 4 and (c in x or x in c)) for x in map(_norm, labs) if x):
+            return True
+        # A chain that stops at county/state level can't contradict the spine city.
+        return pd.NA if not isinstance(cq, str) or len(cqids) <= 2 else False
+    out["city_matches_wikidata"] = pd.array(
+        [matches(c, cq, q) for c, cq, q in zip(out["city"], city_qid, out["venue_qid"])], dtype="boolean")
+    # Distinct spine cities per venue QID (informational).
+    key = city_qid.where(city_qid.notna(), "name:" + out["city"].map(_norm))
+    ncity = key[out["venue_qid"].notna()].groupby(out["venue_qid"]).nunique()
+    out["qid_n_spine_cities"] = out["venue_qid"].map(ncity).astype("Int64")
+    # Geographic check: venue P625 vs the spine city's P625 (city item from city_wikilink).
+    def km_city(cq, lat, lon):
+        if not isinstance(cq, str) or pd.isna(lat):
+            return None
+        cc = W.first(W.entity(cq, cache_only=True), "P625")
+        return round(_km((lat, lon), cc), 1) if cc else None
+    out["km_city_to_venue"] = pd.to_numeric(pd.Series(
+        [km_city(cq, la, lo) for cq, la, lo in zip(city_qid, out["lat"], out["lon"])], index=out.index))
+    far = (out["km_city_to_venue"] > 50) | (out["km_to_locality"] > 50)
+    out["link_ambiguous"] = far.astype("boolean").where(out["venue_qid"].notna())
+    return out
+
+
 def _write(venues: pd.DataFrame, rows: list[dict]) -> pd.DataFrame:
     """Write the table (partial runs leave unprocessed venues with null features)."""
     out = venues.merge(pd.DataFrame(rows), on="venue_id", how="left")
-    # A QID shared by venues in different spine cities usually means the tour table
-    # linked a chain or generic article (e.g. [[Hard Rock Live]] for Hollywood FL and
-    # Orlando). Flag it; consumers should trust the spine city over these coordinates.
-    if "venue_qid" in out:
-        n_cities = out.dropna(subset=["venue_qid"]).groupby("venue_qid")["city"].nunique()
-        out["qid_n_spine_cities"] = out["venue_qid"].map(n_cities).astype("Int64")
-        out["link_ambiguous"] = (out["qid_n_spine_cities"] > 1).astype("boolean")
+    out = postprocess(out)
     for c in ("opening_year", "capacity", "capacity_max", "capacity_n_configs"):
         if c in out:
             out[c] = pd.to_numeric(out[c], errors="coerce").astype("Int64")

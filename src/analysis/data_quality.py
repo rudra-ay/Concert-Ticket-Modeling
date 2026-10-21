@@ -83,7 +83,7 @@ def chart_year(d: pd.DataFrame) -> str:
 
 
 def chart_country(s: pd.DataFrame) -> str:
-    c = s.country_iso2.fillna("unknown").value_counts().head(20)[::-1]
+    c = s.country_final.fillna("unknown").value_counts().head(20)[::-1]
     fig, ax = plt.subplots(figsize=(7, 6))
     ax.barh(c.index, c.values, color=S1, height=0.7)
     ax.set_xscale("log")
@@ -175,17 +175,21 @@ def chart_missing(s: pd.DataFrame) -> tuple[str, pd.DataFrame]:
     return _save(fig, "dq_missingness_heatmap.png"), tab
 
 
-def chart_selection(d: pd.DataFrame) -> tuple[str, pd.Series]:
-    nc = d[~d.is_cancelled_spine & (d.show_date <= pd.Timestamp("2026-10-12"))]
-    dec = pd.cut(nc.tour_progress, [-0.01, 0.2, 0.4, 0.6, 0.8, 1.0], labels=["0–20%", "20–40%", "40–60%", "60–80%", "80–100%"])
-    share = nc.groupby(dec, observed=True).avg_price_usd.apply(lambda x: x.notna().mean() * 100)
-    fig, ax = plt.subplots(figsize=(7, 3.6))
-    ax.bar(share.index.astype(str), share.values, color=S1, width=0.6)
-    for i, v in enumerate(share.values):
-        ax.text(i, v + 0.8, f"{v:.0f}%", ha="center", fontsize=9, color=INK2)
-    ax.set_title("Share of played shows with a price, by position in the tour")
-    ax.set_xlabel("tour_progress (0 = first show, 100% = last)")
-    ax.set_ylabel("% priced")
+def chart_selection(sel: dict) -> tuple[str, pd.Series]:
+    share = pd.Series(sel["by_progress"]) * 100
+    na = pd.Series(sel["by_progress_na"]) * 100
+    fig, ax = plt.subplots(figsize=(7.5, 3.8))
+    xv = np.arange(len(share))
+    ax.bar(xv - 0.18, share.values, color=S1, width=0.34, label="all tours")
+    ax.bar(xv + 0.18, na.reindex(share.index).values, color=S2, width=0.34, label="North America")
+    for i, (a, b_) in enumerate(zip(share.values, na.reindex(share.index).values)):
+        ax.text(i - 0.18, a + 0.8, f"{a:.0f}", ha="center", fontsize=8, color=INK2)
+        ax.text(i + 0.18, b_ + 0.8, f"{b_:.0f}", ha="center", fontsize=8, color=INK2)
+    ax.set_xticks(xv, share.index)
+    ax.set_title("Share of played shows whose figures are reported, by position in the tour")
+    ax.set_xlabel("tour_progress (tours with ≥ 1 reported show; aggregate members count via their unit)")
+    ax.set_ylabel("% covered")
+    ax.legend(loc="lower left")
     ax.grid(axis="x", visible=False)
     return _save(fig, "dq_selection_by_tour_position.png"), share
 
@@ -196,15 +200,22 @@ def _within(y: pd.Series, g: pd.Series) -> pd.Series:
     return y - y.groupby(g).transform("mean")
 
 
-def _cluster_mde(tv: pd.DataFrame, xcol: pd.Series, group: str) -> float:
-    """2.8 x cluster-robust SE (clustered by performer group, split_key) of the FE slope; the coefficient is not reported."""
-    import statsmodels.api as sm
-    yw = _within(tv.log_avg_price_real, tv[group])
-    xw = _within(xcol.astype(float), tv[group])
-    if len(tv) < 10 or xw.std() == 0 or tv.artist_id.nunique() < 2:
-        return np.nan
-    r = sm.OLS(yw.to_numpy(), xw.to_numpy()).fit(cov_type="cluster", cov_kwds={"groups": pd.factorize(tv.split_key)[0]})
-    return float(2.8 * r.bse[0])
+def _cluster_mde(tv: pd.DataFrame, xcol: pd.Series, group: str) -> tuple[float, int]:
+    """(t_.975 + t_.80) on G-1 df x cluster-robust SE of the slope with `group` FE AND year FE,
+    clustered by performer group (split_key). Returns (MDE, G). The coefficient is not reported."""
+    from scipy import stats
+
+    from analysis.fe import fe_ols
+    d = tv.assign(_x=xcol.astype(float), _year=tv.show_date.dt.year)
+    if len(d) < 10 or d["_x"].std() == 0:
+        return np.nan, 0
+    fe = [group] if group == "_year" else [group, "_year"]
+    r = fe_ols(d, "log_avg_price_real", ["_x"], fe, "split_key")
+    G = r.n_clusters
+    if G < 3:
+        return np.nan, G
+    mult = stats.t.ppf(0.975, G - 1) + stats.t.ppf(0.80, G - 1)
+    return float(mult * r.se["_x"]), G
 
 
 def power_binary(s: pd.DataFrame, x: str, group: str = "tour", mask=None) -> dict:
@@ -216,8 +227,9 @@ def power_binary(s: pd.DataFrame, x: str, group: str = "tour", mask=None) -> dic
     n1, n0 = int(tv[x].astype(bool).sum()), int((~tv[x].astype(bool)).sum())
     sd = _within(tv.log_avg_price_real, tv[group]).std() if len(tv) else np.nan
     naive = 2.8 * sd * np.sqrt(1 / n1 + 1 / n0) if n1 and n0 else np.nan
-    return dict(n=len(t), n_true=int(xv.sum()), n_in_varying=len(tv), artists_var=tv.artist_id.nunique(),
-                groups_var=tv[group].nunique(), naive=naive, mde=_cluster_mde(tv, tv[x].astype(bool), group))
+    mde, G = _cluster_mde(tv, tv[x].astype(bool), group)
+    return dict(n=len(t), n_true=int(xv.sum()), n_in_varying=len(tv), artists_var=tv.split_key.nunique(),
+                groups_var=tv[group].nunique(), naive=naive, mde=mde, G=G)
 
 
 def power_cont(s: pd.DataFrame, x: str, group: str = "tour", mask=None) -> dict:
@@ -230,29 +242,31 @@ def power_cont(s: pd.DataFrame, x: str, group: str = "tour", mask=None) -> dict:
     yw = _within(tv.log_avg_price_real, tv[group])
     naive = 2.8 * yw.std() / np.sqrt(len(tv)) if len(tv) > 2 else np.nan
     # per 1 SD of the within-group x
-    mde = _cluster_mde(tv, tv[x].astype(float) / sdx, group) if sdx and sdx > 0 else np.nan
-    return dict(n=len(t), n_in_varying=len(tv), artists_var=tv.artist_id.nunique(), groups_var=tv[group].nunique(),
-                sd_x_within=sdx, naive=naive, mde=mde)
+    mde, G = _cluster_mde(tv, tv[x].astype(float) / sdx, group) if sdx and sdx > 0 else (np.nan, 0)
+    return dict(n=len(t), n_in_varying=len(tv), artists_var=tv.split_key.nunique(), groups_var=tv[group].nunique(),
+                sd_x_within=sdx, naive=naive, mde=mde, G=G)
 
 
 def hypotheses(s: pd.DataFrame, cov: dict) -> tuple[pd.DataFrame, dict]:
     s = s.copy()
-    s["tour"] = s.artist_id + "|" + s.tour_title.fillna("")
-    s["artist"] = s.artist_id
+    s["tour"] = s.tour_unit.fillna(s.artist_id + "|" + s.tour_title.fillna(""))
+    s["artist"] = s.artist_key
     single = s.aggregate_n_shows == 1
     extra: dict = {}
     rows = []
 
     def add(h, var, status, p, note):
         g = p.get("groups_var") or 0
+        g = min(g, p.get("G") or g)
         if status.startswith("TESTABLE") and g < 10:
             status = "UNDERPOWERED (< 10 groups with variation)"
         elif status.startswith("TESTABLE") and g < 30:
             status = "WEAK (< 30 groups with variation)"
         rows.append({"hypothesis": h, "variable": var, "status": status, "n": p.get("n"),
                      "n (within-group variation)": p.get("n_in_varying"),
-                     "artists w/ variation": p.get("artists_var"), "tours/groups w/ variation": p.get("groups_var"),
-                     "naive MDE": p.get("naive"), "clustered MDE": p.get("mde"), "notes": note})
+                     "performer groups w/ variation": p.get("artists_var"), "FE groups w/ variation": p.get("groups_var"),
+                     "G (clusters)": p.get("G"), "naive MDE": p.get("naive"), "clustered MDE": p.get("mde"),
+                     "notes": note + ("; G < 30: use t(G−1) and a wild cluster bootstrap in task 6" if (p.get("G") or 99) < 30 else "")})
 
     # H: city premium with artist FE
     am = s.groupby("artist").metro_key.nunique()
@@ -262,7 +276,7 @@ def hypotheses(s: pd.DataFrame, cov: dict) -> tuple[pd.DataFrame, dict]:
     p = power_cont(s, "metro_median_hh_income", group="artist", mask=s.is_us)
     add("City premium (artist FE)", "metro_key dummies; US: metro_median_hh_income", "TESTABLE", p,
         f"{extra['city']['artists_5plus_metros']} artists play ≥ 5 metros; {extra['city']['metros_30shows_5artists']} metros have ≥ 30 shows from ≥ 5 artists. "
-        "Income MDE is per 1 SD of within-artist income (US only, SNAPSHOT 2024 ACS)")
+        "**This row assesses only the income slope**, per 1 SD of within-artist income (US only, SNAPSHOT 2024 ACS); the metro-dispersion test is in task 6")
     # weekend / holiday (single-night units only: aggregate dates describe the first night)
     add("Weekend premium", "is_fri_sat (tour FE, single-night units)", "TESTABLE",
         power_binary(s, "is_fri_sat", mask=single), "aggregates excluded because their date is the first night only")
@@ -288,8 +302,8 @@ def hypotheses(s: pd.DataFrame, cov: dict) -> tuple[pd.DataFrame, dict]:
     extra["genre"] = dict(artists_by_genre=ga.to_dict(), sd_artist_median=sd_art)
     rows.append({"hypothesis": "Genre / experience premium", "variable": "genre_coarse_final (between artists)",
                  "status": "WEAK (between-artist)", "n": int(s.genre_coarse_final.notna().sum()),
-                 "n (within-group variation)": np.nan, "artists w/ variation": int(len(art)),
-                 "tours/groups w/ variation": int(ga.size),
+                 "n (within-group variation)": np.nan, "performer groups w/ variation": int(len(art)),
+                 "FE groups w/ variation": int(ga.size), "G (clusters)": int(len(art)),
                  "naive MDE": np.nan, "clustered MDE": 2.8 * sd_art * np.sqrt(2 / max(ga.median(), 1)),
                  "notes": f"genre is fixed per artist, so n = artists ({int(ga.min())}–{int(ga.max())} per genre). MDE is for a median-sized genre vs. one other; no direct 'experience/production' measure"})
     # bills / openers
@@ -337,8 +351,8 @@ def hypotheses(s: pd.DataFrame, cov: dict) -> tuple[pd.DataFrame, dict]:
         f"weather ok on {extra['weather']['ok_sample']:,} sample rows; {extra['weather']['outdoor_ok']:,} outdoor; {extra['weather']['rainy_outdoor']} rainy outdoor evenings. "
         "Prices are set before the weather is known, so the expected effect on avg price is small (SHOWDAY)")
     rows.append({"hypothesis": "Set-list popularity", "variable": "—", "status": "NOT TESTABLE", "n": 0,
-                 "n (within-group variation)": np.nan, "artists w/ variation": np.nan, "tours/groups w/ variation": np.nan,
-                 "naive MDE": np.nan, "clustered MDE": np.nan,
+                 "n (within-group variation)": np.nan, "performer groups w/ variation": np.nan, "FE groups w/ variation": np.nan,
+                 "G (clusters)": np.nan, "naive MDE": np.nan, "clustered MDE": np.nan,
                  "notes": f"setlist.fm needs permission. Proxy: album attention `album_pv_*` (bill table), filled on {int(s.album_pv_mean_90d.notna().sum()) if 'album_pv_mean_90d' in s else 0} sample rows; it measures the album, not the set"})
     return pd.DataFrame(rows), extra
 
@@ -356,16 +370,23 @@ def main() -> None:
         "price": chart_price(s), "price_year": chart_price_year(s),
     }
     charts["missing"], miss = chart_missing(s)
-    charts["selection"], sel_share = chart_selection(d)
+    from analysis import selection
+    sel = selection.main()
+    charts["selection"], sel_share = chart_selection(sel)
     hyp, extra = hypotheses(s, cov)
 
     # duplicates / outliers
     dups = d[d.dup_boxoffice_group.notna()]
     near = d.assign(c=d.city.str.lower()).duplicated(["artist_id", "show_date", "c"], keep=False)
     suffix = d.show_id.str.contains(r"__\d+$")
-    cap_dec = d[~d.is_cancelled_spine].groupby("capacity_bucket", observed=True).avg_price_usd.apply(lambda x: 100 * x.notna().mean())
-    cont = d[~d.is_cancelled_spine & d.continent.notna()].groupby("continent").avg_price_usd.apply(lambda x: 100 * x.notna().mean())
-    ctry = s.groupby("country_iso2").agg(n=("show_id", "size"), rel=("price_rel_artist_median", "median")).query("n >= 100").sort_values("rel")
+    cap_dec = pd.Series(sel["by_wikidata_capacity"]) * 100
+    cont = pd.Series(sel["by_continent"]) * 100
+    short = d[d.is_aggregate_unit & d.avg_price_usd.notna() & d.agg_group_id.notna()]
+    placed = d.groupby("agg_group_id").size()
+    short = short[short.show_id.map(placed) < short.aggregate_n_shows]
+    short_tab = short[["show_id", "aggregate_n_shows", "agg_n_venues", "agg_span_days", "analysis_sample"]].assign(
+        placed=short.show_id.map(placed))
+    ctry = s.groupby("country_final").agg(n=("show_id", "size"), rel=("price_rel_artist_era", "median")).query("n >= 100").sort_values("rel")
     top = s.nlargest(8, "avg_price_real")[["show_id", "avg_price_usd", "avg_price_real", "tickets_sold", "aggregate_n_shows"]]
     low = s.nsmallest(5, "avg_price_real")[["show_id", "avg_price_usd", "avg_price_real", "tickets_sold"]]
     big_rel = int((s.price_rel_artist_median.abs() > np.log(3)).sum())
@@ -385,7 +406,7 @@ def main() -> None:
         {"table": k, "status": v["status"], "rows": v.get("rows", 0), "% shows matched": v.get("pct_shows_matched", 0),
          "% priced filled": v.get("pct_priced_filled", 0), "% sample filled": v["pct_analysis_filled"]}
         for k, v in cov.items() if k != "_summary"])
-    counts = ["n", "n (within-group variation)", "artists w/ variation", "tours/groups w/ variation"]
+    counts = ["n", "n (within-group variation)", "performer groups w/ variation", "FE groups w/ variation", "G (clusters)"]
     hyp_md = _md_table(hyp.astype({**{c: "Int64" for c in counts}, "naive MDE": float, "clustered MDE": float})
                        .astype({c: "string" for c in counts}).fillna({c: "—" for c in counts}), "{:.3f}")
     hyp_md = hyp_md.replace("| nan |", "| — |")
@@ -404,7 +425,7 @@ def main() -> None:
 
 Generated by `src/analysis/data_quality.py` from the build at {sm['built']}. Rerun after `build_shows.py`; every number below is recomputed.
 
-**Bottom line.** {sm['rows']:,} show rows, of which {sm['priced']:,} have a price. The **analysis sample is {sm['analysis_sample']:,} rows from {sm['analysis_artists']} artists** ({s.tour_title.nunique()} tour articles). The sample is big-tour, mostly North American (US {100 * s.country_iso2.eq('US').mean():.0f}%), and concentrated in 2008–2019 plus 2022–2025. Prices are clean once the {int(excl.get('implausible', 0)) + int(excl.get('tour_outlier', 0))} flagged rows are removed (no CPI gaps, no duplicate keys). The biggest risks are **selection** (which shows have figures), **"$" read as USD** at non-US shows, and **features that are ex post or current snapshots**.
+**Bottom line.** {sm['rows']:,} show rows, of which {sm['priced']:,} have a price. The **analysis sample is {sm['analysis_sample']:,} rows from {sm['analysis_artists']} artists** ({s.tour_title.nunique()} tour articles). The sample is big-tour, mostly North American (US {100 * s.country_final.eq('US').mean():.0f}%), and concentrated in 2008–2019 plus 2022–2025. Prices are clean once the {int(excl.get('implausible', 0)) + int(excl.get('tour_outlier', 0))} flagged rows are removed (no CPI gaps, no duplicate keys). The biggest risks are **selection** (which shows have figures), **"$" read as USD** at non-US shows, and **features that are ex post or current snapshots**.
 
 ## 1. Join coverage
 
@@ -451,10 +472,13 @@ Patterns to plan around:
 ## 5. Duplicates
 
 - `show_id` is unique ({len(d):,} ids; {int(suffix.sum())} carry a `__2`/`__3` collision suffix), and every feature table is unique on its key. The join is validated many-to-one and never changes the row count (tests/test_shows_join.py).
-- **Box office copied across artists:** {dups.dup_boxoffice_group.nunique()} groups ({len(dups)} rows) where the same gross at the same venue and date appears in two artists' tour articles (an opener's or co-headliner's article quoting the headliner's Boxscore line, e.g. U2/Garbage, Guns N' Roses/ZZ Top, Kenny Chesney/Jason Aldean). One row per group is kept: the headliner when the opening-act cell names the other artist ({int((dups.dup_boxoffice_resolved == 'opener_named').sum() / 2):.0f} groups), else the artist with more priced shows. The dropped copies are `dup_boxoffice_drop`.
-- **One performer, several artist_ids:** the spine's artist_id is per act as written, so one performer can appear under several ids ("Beyoncé" vs. "Beyoncé, Alicia Keys and Missy Elliott"; "P!nk" vs. "Pink"). In the sample, {multi_ids} performer groups span more than one artist_id ({multi_rows:,} rows). Hashing artist_id would have put 14 performers in two splits, so the split hashes `split_key` (performers linked by QID or headliner wikilink) and artist medians use `artist_key`. **Ask collector-prices whether P!nk/Pink-style aliases should be merged in the spine.**
+- **Duplicate box office lines** (review 1, items 2–3): {dups.dup_boxoffice_group.nunique()} groups ({len(dups)} rows) where two priced rows on the same date carry an identical gross, or identical tickets (> 1,000) with gross within 5%. Venue names are deliberately not compared ("Superdome" vs "Louisiana Superdome"). Cross-artist groups come from an opener's or co-headliner's article quoting the headliner's line. Within-artist groups are the same Rush show listed twice under venue variants. Every group is resolved by hand in `data/manual/boxoffice_dedupe.csv`, with a reason per row: {int((~dups.dup_boxoffice_drop).sum())} rows kept, {int(dups.dup_boxoffice_drop.sum())} dropped. The headliner is kept only when its opening-act cell names the other act. Co-bills with no identifiable headliner (Chesney/Aldean 2015, Journey/Santana 1982, …) and festival totals (Foo Fighters/Marilyn Manson, Rock im Ring 2015) are dropped entirely. The Smashing Pumpkins/Marilyn Manson End Times dates are kept under the co-headline act key. `dup_unreviewed` is zero (tested).
+- **Copied figures:** {int(d.dup_figure_copy.sum())} priced rows share an artist's exact gross and tickets with a different date (e.g. Metallica Brisbane 2025 = Bologna 2026; Scorpions Hamburg March = November 2016). Which date the figure belongs to can't be told, so all copies are excluded (`dup_figure_copy`).
+- **One performer, several artist_ids** (review 1, item 4): artist_id is per act as written. `split_key` is the connected component of artist_ids linked by a shared QID or headliner wikilink, a Wikidata P527/P463/P361 edge between two artists in the data (band ↔ member, duo ↔ partner; organisations can't chain because both ends must be artists here), or a manual relation (`data/manual/artist_relations.csv`: NSYNC/Timberlake, Queen/Queen + Adam Lambert and + Paul Rodgers, Jonas Brothers/Demi & Nick, Selena Gomez/the Scene, the Eagles alias). In the sample, {multi_ids} performer groups span more than one artist_id ({multi_rows:,} rows); the largest has {int(comp.max())} ids. Every pair the skeptic listed now shares a split (tested). `artist_key` inherits the QID through the headliner wikilink (`the-eagles` → Eagles). Non-performer acts (Cirque du Soleil, American Idol, Glee and High School Musical casts, Various Artists, the Honda Civic Tour) are excluded: {int(excl.get('non_performer', 0))} priced rows.
 - **Same artist, date and city at two venues:** {int(near.sum())} rows, almost all unpriced (promo appearances, festival side stages). They're left in.
-- **Multi-night aggregates:** {int(d.agg_group_id.notna().sum()):,} rows sit in {d.loc[d.is_aggregate_unit].shape[0]:,} aggregate groups. They're treated as one unit each (DATA_DICTIONARY.md, Join decisions). {int((d.aggregate_n_shows.gt(1) & d.agg_group_id.isna()).sum())} member rows couldn't be placed in a group from row order; they carry no figures, so nothing is lost. {int(excl.get('aggregate_multi_venue', 0))} priced aggregates span several venues (leg totals) and are excluded.
+- **Multi-night aggregates:** {int(d.agg_group_id.notna().sum()):,} rows sit in {d.loc[d.is_aggregate_unit].shape[0]:,} aggregate groups. They're treated as one unit each (DATA_DICTIONARY.md, Join decisions), and deflated at the midpoint month of their span. {int((d.aggregate_n_shows.gt(1) & d.agg_group_id.isna()).sum())} member rows couldn't be placed in a group from row order; they carry no figures. {int(excl.get('aggregate_multi_venue', 0))} priced aggregates span several venues (leg totals) and are excluded. **Priced units with fewer placed members than aggregate_n_shows** (review 1, item 10; agg_n_venues may undercount for these):
+
+{_md_table(short_tab, '{:,.0f}')}
 
 ## 6. Outliers
 
@@ -468,11 +492,11 @@ Bottom:
 {_md_table(low, '{:,.1f}')}
 
 - {sold_gt} sample rows have tickets_sold > tickets_available (by more than 5%), and {small} have fewer than 500 tickets per show. They're left in; their average prices aren't extreme.
-- **Currency check ("$" assumed USD).** {int(s.usd_assumed_non_us.sum()):,} sample rows are non-US shows with a USD gross. If editors had written local dollars as "$", AUD/CAD/NZD/MXN rows would look ~30%+ (CAD/AUD) or far more (MXN) pricier than the artist's norm. Median price relative to the artist median, by country (n ≥ 100):
+- **Currency ("$" assumed USD).** {int(s.usd_assumed_non_us.sum()):,} sample rows are non-US shows with a USD gross. `country_final` fills the country for rows whose spine country is null (venue Wikidata country, doubled spine text, the city suffix, or a US Census match), so these are now flagged too. Median price relative to the artist's 5-year era, by country (n ≥ 100):
 
-{_md_table(ctry.reset_index().rename(columns={'country_iso2': 'country', 'rel': 'median log price vs artist'}), '{:.3f}')}
+{_md_table(ctry.reset_index().rename(columns={'country_final': 'country', 'rel': 'median log price vs artist × 5-yr era'}), '{:.3f}')}
 
-  Canada and Mexico sit at or below the artist norm, which argues against systematic local-dollar contamination there. Australia (and NZ, JP, CH) is +0.1 to +0.3: consistent with a real premium, but partial AUD contamination can't be ruled out. **Sensitivity check in task 6:** rerun on US-only and on `usd_assumed_non_us == False`.
+  These medians can't separate a country premium from currency mislabeling. The formal test is the within-tour FX-slope regression (skeptic's spec) in `src/analysis/currency_test.py` → reports/currency_test.md. Country and city premia are reported only alongside it.
 - Non-pricing anomalies: some "artists" are page titles rather than acts ({', '.join(f'{k} ({v})' for k, v in weird_artists.items()) or 'none'}). `artist_key` strips the "List of ..." wording and maps them to the performer where possible. "Phish concert tours and festivals" has no QID and stays its own key.
 
 ## 7. Selection bias
@@ -480,9 +504,11 @@ Bottom:
 ![selection by tour position]({charts['selection']})
 
 - **Which tours:** only tours big enough to report to Billboard Boxscore/Pollstar *and* to have a Wikipedia box office table. These are arena and stadium acts with long careers; the top 10 artists supply {top_art_share:.0f}% of the sample rows. Results describe superstar pricing, not the concert market. Effects that matter for mid-size acts (opener draw, college towns, club tours) are the least identifiable.
-- **Which shows within a tour:** the priced share falls from {sel_share.iloc[0]:.0f}% of shows in the first fifth of a tour to {sel_share.iloc[-1]:.0f}% in the last fifth. Later legs, and especially non-North-American legs, are less often reported. By continent: {', '.join(f'{k} {v:.0f}%' for k, v in cont.sort_values(ascending=False).items())} priced. By capacity bucket: {', '.join(f'{k} {v:.0f}%' for k, v in cap_dec.items())}. If reporting correlates with success (promoters report strong grosses), priced shows are skewed toward stronger nights and level estimates are biased up. Within-tour contrasts (weekend, leg) are biased only if reporting depends on that contrast.
+- **Which shows within a tour** (review 1, item 6; `src/analysis/selection.py`): "covered" counts members of priced aggregates through their unit. Among {sel['universe_shows']:,} played shows in {sel['tours']:,} tours with at least one reported show, {100 * sel['coverage_all']:.0f}% are covered ({100 * sel['coverage_priced_rows_only']:.0f}% if aggregate members were counted as unpriced). Coverage falls from {sel_share.iloc[0]:.0f}% in the first fifth of a tour to {sel_share.iloc[-1]:.0f}% in the last fifth, and from {100 * list(sel['by_progress_na'].values())[0]:.0f}% to {100 * list(sel['by_progress_na'].values())[-1]:.0f}% in North America alone. By continent: {', '.join(f'{k} {v:.0f}%' for k, v in cont.sort_values(ascending=False).items())}. By Wikidata capacity (resolved venues only, {100 * sel['wikidata_capacity_known_share']:.0f}% of the universe; resolution itself ran priced-first): {', '.join(f'{k} {v:.0f}%' for k, v in cap_dec.items())}.
+- **Within-tour LPM** of covered (tour FE, clustered by split_key, n = {sel['lpm_n']:,}, G = {sel['lpm_clusters']}): tour progress {sel['lpm']['tour_progress']['b']:+.3f} ({sel['lpm']['tour_progress']['se']:.3f}), log metro population {sel['lpm']['log_metro_pop_f']['b']:+.3f} ({sel['lpm']['log_metro_pop_f']['se']:.3f}), log Wikidata capacity {sel['lpm']['log_cap_wd_f']['b']:+.3f} ({sel['lpm']['log_cap_wd_f']['se']:.3f}), Fri/Sat {sel['lpm']['fri_sat']['b']:+.3f} ({sel['lpm']['fri_sat']['se']:.3f}), Sunday {sel['lpm']['sunday']['b']:+.3f} ({sel['lpm']['sunday']['se']:.3f}), Europe {sel['lpm']['cont_europe']['b']:+.3f}, Asia {sel['lpm']['cont_asia']['b']:+.3f}. **Supported:** selection is on price-relevant observables (position in the tour, metro size, venue size, region). Weekday barely matters.
+- **Is selection on price itself?** The earlier claim that "priced shows skew toward strong nights" was never tested and is withdrawn. Among North American reported shows (year FE), tours with higher coverage have higher sell-out ({sel['strong_nights']['sellout_on_tour_coverage']['b']:+.3f} per unit of coverage, SE {sel['strong_nights']['sellout_on_tour_coverage']['se']:.3f}). They also price slightly higher relative to the same artist's era ({sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['b']:+.3f}, SE {sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['se']:.3f}). So better-documented tours are somewhat stronger tours, a tour-level selection that within-tour comparisons absorb and between-tour comparisons do not.
+- **Mitigations used in task 6:** tour/artist FE; inverse-probability weights from the LPM (`data/selection_weights.parquet`, p clipped at 0.05, weights trimmed at the 99th percentile); a sensitivity spec on tours with coverage ≥ 0.8 ({sel['tours_cov80_shows_in_sample']:,} sample shows); results by era. No Heckman correction (no credible exclusion restriction).
 - **When:** coverage before 2008 is sparse and older articles are edited less. Era-specific results should be read as "among documented tours".
-- **Mitigations for task 6:** use tour and artist fixed effects (identification within selected units), report results by era, compare first-leg-only estimates, and model `P(priced)` from spine features as a diagnostic (rows without figures are kept for exactly this).
 
 ## 8. Can the data test each hypothesis?
 
@@ -504,7 +530,7 @@ The real power driver is the number of tours or artists with variation, not n.
 """
     REPORT.write_text(text)
     print(f"wrote {REPORT.relative_to(ROOT)} and {len(charts)} charts")
-    print(hyp[["hypothesis", "status", "n", "artists w/ variation", "tours/groups w/ variation", "naive MDE", "clustered MDE"]].to_string())
+    print(hyp[["hypothesis", "status", "n", "performer groups w/ variation", "G (clusters)", "naive MDE", "clustered MDE"]].to_string())
 
 
 if __name__ == "__main__":

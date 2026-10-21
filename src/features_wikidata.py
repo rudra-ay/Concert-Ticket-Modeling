@@ -5,6 +5,7 @@ One cached JSON per QID under data/raw/wikidata/.
 """
 from __future__ import annotations
 
+import json
 import re
 
 from features_common import RAW, get_json_cached
@@ -13,10 +14,18 @@ CACHE = RAW / "wikidata"
 URL = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
 
 
-def entity(qid: str) -> dict | None:
+def entity(qid: str, cache_only: bool = False) -> dict | None:
+    """Entity JSON. cache_only=True never touches the network (None if not cached)."""
     if not qid or not re.fullmatch(r"Q\d+", qid):
         return None
-    data = get_json_cached(URL.format(qid=qid), CACHE / f"{qid}.json")
+    path = CACHE / f"{qid}.json"
+    if cache_only:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        data = None if isinstance(data, dict) and data.get("_status") == 404 else data
+    else:
+        data = get_json_cached(URL.format(qid=qid), path)
     if not data:
         return None
     ents = data.get("entities", {})

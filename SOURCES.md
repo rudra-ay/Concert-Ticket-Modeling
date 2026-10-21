@@ -25,6 +25,8 @@ Evidence cache: robots.txt files are in `data/raw/_scout/robots/`, terms pages i
 | A9 | BLS CPI-U | Flat-file download | deflator for LEVEL | No | **ALLOWED** |
 | A10 | US federal holidays (OPM + `holidays` PyPI) | Pages / library | features | No | **ALLOWED** |
 | A11 | Published papers and industry articles | Manual reading | priors, benchmarks | No | **ALLOWED** (manual citation only) |
+| A12 | Federal Reserve G.5/H.10 foreign exchange rates | Bulk file + flat files | FX check of non-US grosses (units per USD, monthly) | No | **ALLOWED** (added 2026-10-19) |
+| A13 | ECB euro foreign exchange reference rates | Bulk file | FX for currencies the Fed lacks (1999 on) | No | **ALLOWED** (added 2026-10-19; cite ECB, state modifications; collected, not required for the $=USD test) |
 | N1 | StubHub | Web (no public API) | **PATH** (resale listings) | n/a | **NEEDS PERMISSION** |
 | N2 | SeatGeek (API + web) | API / web | PATH, LEVEL | client_id | **NEEDS PERMISSION** (blocked us) |
 | N3 | Vivid Seats | Web | PATH | n/a | **NEEDS PERMISSION** |
@@ -49,7 +51,7 @@ Evidence cache: robots.txt files are in `data/raw/_scout/robots/`, terms pages i
 | P3 | Bandsintown API | API | features | Artist app_id | **PROHIBITED** |
 | P4 | Ticketmaster.com web pages (scraping) | Web | LEVEL / PATH | n/a | **PROHIBITED** (use A6 instead) |
 
-**Counts:** 11 ALLOWED, 19 NEEDS PERMISSION, 4 PROHIBITED.
+**Counts:** 13 ALLOWED, 19 NEEDS PERMISSION, 4 PROHIBITED (A12 and A13 added 2026-10-19).
 
 ---
 
@@ -179,6 +181,7 @@ Several official API hosts serve a robots.txt that disallows everything, or disa
 - **robots.txt:** `archive-api.open-meteo.com`: `Disallow: /` (API host; see the note above). `open-meteo.com`: allows all.
 - **Caveats:** this is reanalysis (ERA5-based) at grid resolution, not a station reading. Snap coordinates to the venue.
 - **Collection spec:** one call per venue covering all show dates in that venue's range (`start_date`/`end_date`), about 2–5k calls at least 5 s apart. Cache: `data/raw/open_meteo/<venue_qid>.json`. License: **CC BY 4.0, attribute "Weather data by Open-Meteo.com"; non-commercial only.**
+- **Incident log (collector-context):** 2026-10-19 ~17:38 PDT, after 808 calls that UTC day: one 2xx response whose body wasn't JSON ("Expecting value: line 1 column 1": empty, or starting with "<"). **Its status and body were not captured**, so it can't be classified after the fact: it was either a transient empty body or an unrecognised page. There was no 403/429 and no other pushback. Earlier that evening there were ~9 read timeouts (120 s) on 20-venue × 14-day requests. Response: requests now hold a cross-process lock with end-to-start ≥ 5 s spacing and are logged in `data/raw/_requests/archive-api.open-meteo.com.csv`. Any 403/429, challenge page or non-JSON 2xx stops the run and is saved to `data/raw/_bad_responses/`. 5xx, empty bodies and timeouts back off (60 s, 120 s) and stop as NetworkDown after 3 in a row. The job runs under `src/context_supervise.py`.
 
 ### A8. US Census ACS (bulk downloads)
 - **URL:** https://www2.census.gov/programs-surveys/acs/ (ACS 5-year tables, e.g. B19013 median household income and B01003 population, by CBSA)
@@ -206,6 +209,28 @@ Several official API hosts serve a robots.txt that disallows everything, or disa
 
 ### A11. Published papers and industry articles (manual)
 - See LITERATURE.md. Use them to read benchmarks (e.g. Pollstar year-end average ticket prices: $135.92 in 2024 and $132.62 in 2025 for the Top 100 tours) and to set priors. **Manual reading and citation only.** No automated collection from Billboard (see N9) or Pollstar (N8).
+
+
+### A12. Federal Reserve G.5/H.10 foreign exchange rates (added 2026-10-19 by collector-context)
+- **URLs:** G.5/H.10 Data Download Program bulk file, `https://www.federalreserve.gov/datadownload/Output.aspx?rel=H10&filetype=zip` (one SDMX/ZIP, 2.1 MB zipped, all history, all series). Plus H.10 historical daily plain-text files for the euro-legacy currencies dropped from G.5: `https://www.federalreserve.gov/releases/h10/hist/dat89_<cc>.txt` (1971–1989) and `dat96_<cc>.txt` (1990–1998), and `dat00_gr.txt` for Greece (to 2000).
+- **Serves:** a check of whether "$" grosses at non-US shows are really USD, and conversion of local-currency figures. Monthly, units per USD, 1971 on.
+- **Auth:** none.
+- **robots.txt:** `www.federalreserve.gov/robots.txt` returns **404** (no robots file, so no crawl restrictions). Evidence: `data/raw/fx/_robots_www.federalreserve.gov.txt`.
+- **Terms:** Board website policies (https://www.federalreserve.gov/disclaimer.htm, cached in `data/raw/fx/_terms_disclaimer.html`): "Unless otherwise indicated, information on Board's website is in the public domain and may be copied and distributed without permission. Please cite to the Board as the source of the information."
+- **Caveats:** (1) The DDP application is being retired; its header says the "Build Your Package" feature goes the week of November 9 (2026), and points to the release pages. The all-data ZIP is cached, so rebuilds don't need it. (2) The `.htm` versions of the historical pages carry a Cloudflare script tag; only the `.txt` files are used, and no challenge was served. (3) G.5 has no ARS, CLP, COP, PEN, PLN, CZK, HUF, RON, TRY, ILS, AED, RUB, PHP, IDR or MOP; MXN starts 1993-11, BRL 1995-01, CNY/HKD/SGD/THB 1981, KRW 1981-04, TWD 1983-10.
+- **Collection spec (done):** 1 ZIP + 25 daily text files (11 legacy currencies × 2 periods, Greece 1999–2000, and 2 JPY files for validation), plus index, terms and 2 probe pages, at least 5 s apart, honest UA. Cache: `data/raw/fx/`. Built by `src/build_fx.py` into `data/interim/fx_monthly.parquet`. License: **public domain (US Government / Federal Reserve Board); cite "Board of Governors of the Federal Reserve System, G.5/H.10 Foreign Exchange Rates."**
+- **Not used:** FRED. The Fed's own files serve the same G.5 series, so FRED's robots and terms weren't needed.
+
+
+### A13. ECB euro foreign exchange reference rates (added 2026-10-19 by collector-context)
+- **Status:** collected; not required for the $=USD test per skeptic review (2026-10-19). Kept in fx_monthly as flagged `is_cross_rate` rows at the lead's decision.
+- **URL:** `https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip`: one CSV with every daily reference rate since 1999-01-04, 41 currencies against EUR. Linked from the ECB's euro reference rates page.
+- **Serves:** FX for currencies the Fed doesn't publish (A12 gaps): CZK, HUF, PLN, RON/ROL, TRY/TRL, RUB, BGN, HRK, ISK, ILS, PHP, IDR, and the pre-euro currencies of the 2007–2015 joiners. Crossed to units per USD via the same day's USD/EUR rate.
+- **Auth:** none.
+- **robots.txt:** `www.ecb.europa.eu` allows `/stats/` for `*`. It disallows only translated `_content.*.html` pages, some media folders and `/euro/changeover/shared/data/`, and sets **`Crawl-delay: 5`**, which our ≥ 5 s spacing meets. Evidence: `data/raw/fx_ecb/_robots_www.ecb.europa.eu.txt`.
+- **Terms:** ECB "Disclaimer & copyright" (cached `data/raw/fx_ecb/_terms_disclaimer.html`): "users of this website may make free use of the information obtained directly from it subject to the following conditions: When such information is distributed or reproduced, it must appear accurately and the ECB must be cited as the source. [...] If the information is modified by the user (e.g. by seasonal adjustment of statistical data or calculation of growth rates) this must be stated explicitly." (The exception covers authored documents such as Working Papers, not statistics.) The rates page adds: "published for information purposes only. Using the rates for transaction purposes is strongly discouraged." Research use is fine.
+- **Caveats:** ECB rates are fixed around 14:15 CET, not at New York noon. ECB-crossed vs Fed G.5 monthly averages differ by a median 0.05–0.07% (8 overlapping currencies). Some series are suspended or discontinued (ISK 2008–2018, RUB after 2022-03). No ARS, CLP, COP, PEN or other Latin American currencies except BRL and MXN, which the Fed already covers.
+- **Collection spec (done):** 1 ZIP plus robots, terms and rates page, ≥ 5 s apart, honest UA. Cache: `data/raw/fx_ecb/`. Used by `src/build_fx.py` only for currencies absent from A12. License: **free use; cite "European Central Bank, euro foreign exchange reference rates", and state that the data were modified (crossed via USD/EUR and averaged by month)**, as fx_monthly.md does.
 
 ---
 

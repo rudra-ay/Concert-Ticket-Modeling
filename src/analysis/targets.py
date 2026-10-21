@@ -50,25 +50,64 @@ def deflate(nominal: pd.Series, dates: pd.Series, cpi: pd.Series, base_month: pd
     return real, idx
 
 
-def artist_keys(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+WIKIDATA_CACHE = ROOT / "data/raw/wikidata"
+GROUP_PROPS = ("P527", "P463", "P361")  # has part, member of, part of
+
+
+def wikidata_group_edges(qids: pd.Series) -> list[tuple[str, str]]:
+    """Band/member/package edges between artists in the data, from cached Special:EntityData JSON.
+
+    Only edges whose BOTH ends are artist QIDs in the data are kept, so membership in
+    organisations (halls of fame, labels) can't chain unrelated acts together.
+    """
+    import json
+
+    q = set(qids.dropna())
+    edges = []
+    for x in sorted(q):
+        f = WIKIDATA_CACHE / f"{x}.json"
+        if not f.exists():
+            continue
+        ents = json.loads(f.read_text())["entities"]
+        e = ents.get(x) or next(iter(ents.values()))
+        for prop in GROUP_PROPS:
+            for c in e.get("claims", {}).get(prop, []):
+                tgt = c["mainsnak"].get("datavalue", {}).get("value", {}).get("id")
+                if tgt in q and tgt != x:
+                    edges.append((x, tgt))
+    return edges
+
+
+def artist_keys(df: pd.DataFrame, qid_edges: list[tuple[str, str]] | None = None,
+                relations: pd.DataFrame | None = None) -> tuple[pd.Series, pd.Series]:
     """(split_key, artist_key) for each row.
 
-    artist_key: for single-headliner acts, the performer's Wikidata QID, else the
-    artist slug with "List of ..." page wording stripped (merges aliases like
-    P!nk/Pink); for co-headline acts the artist_id (a package is its own product).
-    split_key: connected component of artist_ids that share a performer, i.e. an
-    artist_key or any headliner link in `artist_wikilink` (so "Elton John and
-    Billy Joel", "Elton John" and "Billy Joel" land in the same split). Named by
-    the component's alphabetically first artist_key.
+    artist_key: for single-headliner acts, the performer's Wikidata QID (inherited through
+    the headliner wikilink when the row has none, e.g. "the Eagles" -> Eagles), else the
+    artist slug with "List of ..." page wording stripped; for co-headline acts the
+    artist_id (a package is its own product). Manual `alias` relations merge artist_keys.
+    split_key: connected component of artist_ids that share a performer: same artist_key,
+    any shared headliner wikilink, a Wikidata band/member edge (qid_edges) or a manual
+    relation. So "One Direction", "Harry Styles" and "Niall Horan" share a split.
     """
     slug = (df["artist_id"]
             .str.replace(r"^list-of-(\d{4}-)?", "", regex=True)
             .str.replace(r"-(live-performances|concerts|concert-tours-and-festivals|festival-shows|finalists)$", "", regex=True))
     qid_by_slug = df.dropna(subset=["artist_qid"]).groupby("artist_id")["artist_qid"].first()
-    qid = df["artist_qid"].fillna(slug.map(qid_by_slug))
+    links = df["artist_wikilink"] if "artist_wikilink" in df else pd.Series(pd.NA, index=df.index)
+    first_link = links.str.split(" | ", regex=False).str[0].str.replace("_", " ").str.strip().str.lower()
+    qid_by_link = (pd.DataFrame({"l": first_link, "q": df["artist_qid"]}).dropna()
+                   .groupby("l")["q"].agg(lambda v: v.mode().iloc[0]))
+    qid = df["artist_qid"].fillna(slug.map(qid_by_slug)).fillna(first_link.map(qid_by_link))
     performer = qid.fillna("slug:" + slug)
     solo = df["n_headliners"].fillna(1).eq(1) if "n_headliners" in df else pd.Series(True, index=df.index)
     artist_key = performer.where(solo, "act:" + df["artist_id"]).astype("string")
+    rel = relations if relations is not None else pd.DataFrame(columns=["artist_id_a", "artist_id_b", "relation"])
+    key_by_id = pd.Series(artist_key.to_numpy(), index=df["artist_id"].to_numpy())
+    key_by_id = key_by_id[~key_by_id.index.duplicated()]
+    for _, r in rel[rel["relation"] == "alias"].iterrows():
+        if r.artist_id_a in key_by_id.index and r.artist_id_b in key_by_id.index:
+            artist_key = artist_key.mask(df["artist_id"] == r.artist_id_a, key_by_id[r.artist_id_b])
 
     parent: dict[str, str] = {}
 
@@ -84,7 +123,6 @@ def artist_keys(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
         if ra != rb:
             parent[max(ra, rb)] = min(ra, rb)
 
-    links = df.get("artist_wikilink", pd.Series(pd.NA, index=df.index))
     for aid, perf, ak, lk in zip(df["artist_id"], performer, artist_key, links):
         node = f"id:{aid}"
         union(node, f"p:{perf}")
@@ -93,7 +131,10 @@ def artist_keys(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
             for target in lk.split(" | "):
                 if target.strip():
                     union(node, "w:" + target.strip().replace("_", " ").lower())
-    # name each component by its first artist_key (stable, human-readable)
+    for a, b in qid_edges or []:
+        union(f"p:{a}", f"p:{b}")
+    for _, r in rel.iterrows():
+        union(f"id:{r.artist_id_a}", f"id:{r.artist_id_b}")
     comp_name: dict[str, str] = {}
     for aid, ak in sorted(zip(df["artist_id"], artist_key), key=lambda x: str(x[1])):
         comp_name.setdefault(find(f"id:{aid}"), str(ak))
@@ -130,6 +171,36 @@ def artist_relative_target(df: pd.DataFrame, fit_mask: pd.Series, col: str = "lo
     """
     med = artist_median(df, fit_mask, col, key)
     return df[col] - df[key].map(med)
+
+
+def tour_relative_target(df: pd.DataFrame, fit_mask: pd.Series, col: str = "log_avg_price_real",
+                         min_n: int = 5, key: str = "tour_unit") -> pd.Series:
+    """`col` minus the median of the same tour unit over `fit_mask` rows; NaN for units with < min_n fit rows.
+
+    Tour units split long list articles/residencies and long pauses (build_shows.tour_units),
+    so the median is over ~1-2 years of shows. Pass the training fold as fit_mask inside CV.
+    """
+    g = df.loc[fit_mask].groupby(key)[col]
+    med = g.median()[g.size() >= min_n]
+    return df[col] - df[key].map(med)
+
+
+def artist_era_target(df: pd.DataFrame, fit_mask: pd.Series, col: str = "log_avg_price_real",
+                      min_n: int = 5, bucket: str = "year_bucket_5") -> pd.Series:
+    """`col` minus the median of the same artist_key x 5-year TOUR-START bucket over `fit_mask` rows.
+
+    Buckets are on the tour unit's start year (amendment A2), so no tour is cut across cells.
+    NaN for cells with < min_n fit rows or artist_keys with < min_n fit rows. Models on it
+    must include year FE.
+    """
+    fit = df.loc[fit_mask]
+    g = fit.groupby(["artist_key", bucket])[col]
+    med = g.median()[g.size() >= min_n]
+    ok_artists = fit.groupby("artist_key").size()
+    ok_artists = set(ok_artists[ok_artists >= min_n].index)
+    keys = pd.MultiIndex.from_arrays([df["artist_key"], df[bucket]])
+    m = pd.Series(med.reindex(keys).to_numpy(), index=df.index)
+    return (df[col] - m).where(df["artist_key"].isin(ok_artists))
 
 
 def finite(s: pd.Series) -> pd.Series:

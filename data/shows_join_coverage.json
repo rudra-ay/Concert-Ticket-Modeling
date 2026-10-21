@@ -2,48 +2,48 @@
   "artist": {
     "file": "data/interim/features_artist.parquet",
     "key": "artist_id",
-    "status": "partial",
-    "rows": 453,
-    "modified": "2026-10-19T22:19+00:00",
+    "status": "ok",
+    "rows": 482,
+    "modified": "2026-10-19T23:38+00:00",
     "orphan_keys": 0,
-    "pct_shows_matched": 96.0,
-    "pct_priced_matched": 97.5,
-    "pct_shows_filled": 96.0,
-    "pct_priced_filled": 97.5,
-    "pct_analysis_filled": 97.5
+    "pct_shows_matched": 100.0,
+    "pct_priced_matched": 100.0,
+    "pct_shows_filled": 100.0,
+    "pct_priced_filled": 100.0,
+    "pct_analysis_filled": 100.0
   },
   "artist_show": {
     "file": "data/interim/features_artist_show.parquet",
     "key": "show_id",
-    "status": "partial",
-    "rows": 66233,
-    "modified": "2026-10-19T22:19+00:00",
+    "status": "ok",
+    "rows": 71285,
+    "modified": "2026-10-19T23:38+00:00",
     "orphan_keys": 0,
-    "pct_shows_matched": 92.9,
-    "pct_priced_matched": 94.1,
-    "pct_shows_filled": 92.9,
-    "pct_priced_filled": 94.1,
-    "pct_analysis_filled": 94.1
+    "pct_shows_matched": 100.0,
+    "pct_priced_matched": 100.0,
+    "pct_shows_filled": 100.0,
+    "pct_priced_filled": 100.0,
+    "pct_analysis_filled": 100.0
   },
   "venue": {
     "file": "data/interim/features_venue.parquet",
     "key": "venue_id",
     "status": "partial",
     "rows": 13048,
-    "modified": "2026-10-19T23:33+00:00",
+    "modified": "2026-10-20T17:30+00:00",
     "orphan_keys": 0,
     "pct_shows_matched": 100.0,
     "pct_priced_matched": 100.0,
-    "pct_shows_filled": 60.3,
-    "pct_priced_filled": 81.2,
-    "pct_analysis_filled": 81.3
+    "pct_shows_filled": 90.4,
+    "pct_priced_filled": 96.4,
+    "pct_analysis_filled": 96.4
   },
   "metro": {
     "file": "data/interim/features_metro.parquet",
     "key": "venue_id",
     "status": "ok",
     "rows": 13048,
-    "modified": "2026-10-19T23:21+00:00",
+    "modified": "2026-10-21T01:51+00:00",
     "orphan_keys": 0,
     "pct_shows_matched": 100.0,
     "pct_priced_matched": 100.0,
@@ -56,7 +56,7 @@
     "key": "venue_id",
     "status": "ok",
     "rows": 13048,
-    "modified": "2026-10-19T23:21+00:00",
+    "modified": "2026-10-21T01:51+00:00",
     "orphan_keys": 0,
     "pct_shows_matched": 100.0,
     "pct_priced_matched": 100.0,
@@ -93,57 +93,59 @@
   "bill": {
     "file": "data/interim/features_bill.parquet",
     "key": "show_id",
-    "status": "partial",
+    "status": "ok",
     "rows": 71285,
-    "modified": "2026-10-19T23:31+00:00",
+    "modified": "2026-10-20T06:55+00:00",
     "orphan_keys": 0,
     "pct_shows_matched": 100.0,
     "pct_priced_matched": 100.0,
-    "pct_shows_filled": 0.0,
-    "pct_priced_filled": 0.0,
-    "pct_analysis_filled": 0.0
+    "pct_shows_filled": 100.0,
+    "pct_priced_filled": 100.0,
+    "pct_analysis_filled": 100.0
   },
   "weather": {
     "file": "data/interim/features_weather.parquet",
     "key": "show_id",
     "status": "partial",
     "rows": 71285,
-    "modified": "2026-10-19T23:23+00:00",
+    "modified": "2026-10-21T01:41+00:00",
     "orphan_keys": 0,
     "pct_shows_matched": 100.0,
     "pct_priced_matched": 100.0,
-    "pct_shows_filled": 12.1,
-    "pct_priced_filled": 23.2,
-    "pct_analysis_filled": 23.2
+    "pct_shows_filled": 39.0,
+    "pct_priced_filled": 98.2,
+    "pct_analysis_filled": 98.2
   },
   "_summary": {
-    "built": "2026-10-19T23:34+00:00",
+    "built": "2026-10-21T01:51+00:00",
     "rows": 71285,
     "priced": 24078,
-    "analysis_sample": 23952,
-    "analysis_artists": 316,
+    "analysis_sample": 23323,
+    "analysis_artists": 310,
     "exclusions": {
       "unpriced": 47207,
+      "non_performer": 510,
+      "dup_boxoffice": 76,
+      "dup_figure_copy": 68,
       "aggregate_multi_venue": 52,
       "tour_outlier": 35,
-      "dup_boxoffice": 25,
       "implausible": 14
     },
     "split_artists": {
-      "test": 54,
+      "test": 59,
       "train": 208,
-      "valid": 54
+      "valid": 43
     },
     "split_keys": {
-      "test": 45,
-      "train": 177,
-      "valid": 41
+      "test": 38,
+      "train": 164,
+      "valid": 33
     },
-    "analysis_artist_keys": 310,
+    "analysis_artist_keys": 304,
     "split_rows": {
-      "train": 15521,
-      "valid": 4344,
-      "test": 4087
+      "train": 15293,
+      "test": 4336,
+      "valid": 3694
     },
     "cpi_base_month": "2026-09"
   }
