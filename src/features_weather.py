@@ -56,33 +56,81 @@ class QuotaExhausted(RuntimeError):
 
 
 class QuotaLedger:
-    """Counts location-calls per rolling minute/hour (in memory) and per UTC day (persisted)."""
+    """Location-call ledger shared by every process: per UTC day in _quota.json ({date: count}, the format the
+    watchdog reads) and the rolling minute/hour windows in _quota_recent.json. Every check-and-update happens
+    under an exclusive flock and re-reads the files first, so concurrent or restarted processes can't lose or
+    double-count each other's calls."""
 
     def __init__(self, path=CACHE / "_quota.json"):
         self.path = path
-        self.recent: collections.deque[tuple[float, int]] = collections.deque()
-        self.days = json.loads(path.read_text()) if path.exists() else {}
+        self.recent_path = path.with_name("_quota_recent.json")
+        self.lock_path = path.with_name("_quota.lock")
+        self.recent: collections.deque[tuple[float, int]] = collections.deque()  # last acquire, for refund()
+        self.days = self._read(self.path, {})
 
     @staticmethod
     def _today() -> str:
         return dt.datetime.now(dt.timezone.utc).date().isoformat()
 
-    def _window(self, seconds: float) -> int:
-        now = time.monotonic()
-        return sum(n for t, n in self.recent if now - t < seconds)
+    @staticmethod
+    def _read(path, default):
+        try:
+            return json.loads(path.read_text())
+        except (FileNotFoundError, ValueError):
+            return default
+
+    def _locked(self):
+        import contextlib
+        import fcntl
+
+        @contextlib.contextmanager
+        def cm():
+            with open(self.lock_path, "a+") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lk, fcntl.LOCK_UN)
+        return cm()
 
     def acquire(self, n: int) -> None:
-        if self.days.get(self._today(), 0) + n > QUOTA_PER_DAY:
-            raise QuotaExhausted(f"daily budget {QUOTA_PER_DAY} reached; rerun after 00:00 UTC to continue")
-        while self._window(60) + n > QUOTA_PER_MIN or self._window(3600) + n > QUOTA_PER_HOUR:
-            wait = 60 if self._window(3600) + n <= QUOTA_PER_HOUR else 300
+        while True:
+            with self._locked():
+                days = self._read(self.path, {})
+                now = time.time()
+                recent = [(t, k) for t, k in self._read(self.recent_path, []) if now - t < 3600]
+                if days.get(self._today(), 0) + n > QUOTA_PER_DAY:
+                    self.days = days
+                    raise QuotaExhausted(f"daily budget {QUOTA_PER_DAY} reached; rerun after 00:00 UTC to continue")
+                per_min = sum(k for t, k in recent if now - t < 60)
+                per_hour = sum(k for _, k in recent)
+                if per_min + n <= QUOTA_PER_MIN and per_hour + n <= QUOTA_PER_HOUR:
+                    days[self._today()] = days.get(self._today(), 0) + n
+                    recent.append((now, n))
+                    write_atomic(self.path, json.dumps(days).encode())
+                    write_atomic(self.recent_path, json.dumps(recent).encode())
+                    self.days = days
+                    self.recent.append((now, n))
+                    return
+            wait = 60 if per_hour + n <= QUOTA_PER_HOUR else 300
             print(f"  quota pacing: sleeping {wait}s", flush=True)
             time.sleep(wait)
-        self.recent.append((time.monotonic(), n))
-        while self.recent and time.monotonic() - self.recent[0][0] > 3600:
-            self.recent.popleft()
-        self.days[self._today()] = self.days.get(self._today(), 0) + n
-        write_atomic(self.path, json.dumps(self.days).encode())
+
+    def refund(self, n: int) -> None:
+        """Undo this process's latest acquire(n) for a request that never reached the server."""
+        with self._locked():
+            days = self._read(self.path, {})
+            recent = self._read(self.recent_path, [])
+            if self.recent and self.recent[-1][1] == n:
+                t, _ = self.recent.pop()
+                for i in range(len(recent) - 1, -1, -1):
+                    if recent[i][0] == t and recent[i][1] == n:
+                        recent.pop(i)
+                        break
+            days[self._today()] = max(0, days.get(self._today(), 0) - n)
+            write_atomic(self.path, json.dumps(days).encode())
+            write_atomic(self.recent_path, json.dumps(recent).encode())
+            self.days = days
 
 
 def venue_coordinates(spine: pd.DataFrame) -> pd.DataFrame:

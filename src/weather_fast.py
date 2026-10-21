@@ -71,12 +71,8 @@ def plan(spine: pd.DataFrame, include_unpriced: bool, today: dt.date | None = No
 
 
 def refund(ledger: fw.QuotaLedger, n: int) -> None:
-    """Undo the latest acquire(n) for a request that never reached the server."""
-    day = ledger._today()
-    if ledger.recent and ledger.recent[-1][1] == n:
-        ledger.recent.pop()
-    ledger.days[day] = max(0, ledger.days.get(day, 0) - n)
-    write_atomic(ledger.path, json.dumps(ledger.days).encode())
+    """Undo the latest acquire(n) for a request that never reached the server (locked, cross-process)."""
+    ledger.refund(n)
 
 
 def fetch(batch: pd.DataFrame, ledger: fw.QuotaLedger, state: dict) -> None:

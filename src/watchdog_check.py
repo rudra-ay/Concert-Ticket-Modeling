@@ -276,14 +276,17 @@ def venue_paused_by_chain() -> bool:
 
 
 def check_bad_responses() -> None:
-    """Context collectors save any challenge/403/429/unrecognised 2xx response here and stop for good."""
+    """Context collectors save any challenge/403/429/unrecognised 2xx response here and stop for good.
+    Alerts on files newer than the last reported one (state key bad_responses_seen, set by the agent)."""
     d = RAW / "_bad_responses"
     files = sorted((f for f in d.glob("*") if f.is_file()), key=lambda f: f.stat().st_mtime) if d.is_dir() else []
-    if files:
-        add("ALERT", "context.bad_response", f"{len(files)} saved bad response(s) in data/raw/_bad_responses, newest "
-            f"{files[-1].name} {fmt_age(age(files[-1]))}: a context job stopped on pushback or an unknown page")
+    seen = _state().get("bad_responses_seen", 0)
+    new = [f for f in files if f.stat().st_mtime > seen]
+    if new:
+        add("ALERT", "context.bad_response", f"{len(new)} new saved bad response(s) in data/raw/_bad_responses, "
+            f"newest {new[-1].name} {fmt_age(age(new[-1]))}: a context job stopped on pushback or an unknown page")
     else:
-        add("OK", "context.bad_response", "no saved bad responses")
+        add("OK", "context.bad_response", f"no new saved bad responses ({len(files)} already reported)")
 
 
 def check_chain() -> None:
@@ -341,6 +344,9 @@ def check_weather() -> None:
         quota = {}
     utc = dt.datetime.now(dt.timezone.utc)
     used = quota.get(utc.date().isoformat(), 0)
+    over = {d: n for d, n in quota.items() if n > 8000 and d >= (utc.date() - dt.timedelta(days=2)).isoformat()}
+    if over:
+        add("ALERT", "weather.quota", f"weather: Open-Meteo ledger above the 8,000/day cap: {over} (UTC days)")
     pushback_check(key, lines, bool(alive), r"windows done|wrote ")
     if not alive:
         if last_match(lines[-15:], r"pass complete"):
@@ -446,8 +452,10 @@ def check_agents() -> None:
 # --- forward collector (launchd, daily 09:15 local) -------------------------------------------
 FWD_LABEL = "com.ticketpriceresearch.forward-collector"
 FWD_FIRST_RUN = dt.date(2026, 10, 20)
-FWD_CHECK_AFTER = dt.time(9, 45)
+FWD_JUDGE_AFTER = dt.time(15, 0)   # runs take ~2 h, up to ~5 h with the rolling-budget wait (22:00 UTC, same UTC day)
+FWD_UTC_ROLLOVER = dt.time(17, 0)  # PDT: after this `snapshots today` counts the next UTC day
 FWD_EXIT = {3: "API key missing", 5: "API key rejected", 6: "stopped on HTTP 429 (report before the next run)"}
+FWD_ROLLING_STOP = "rolling 24h call budget"
 
 
 def _state() -> dict:
@@ -455,6 +463,10 @@ def _state() -> dict:
         return json.loads(STATE.read_text())
     except (OSError, ValueError):
         return {}
+
+
+def _fwd_expected(day: dt.date) -> tuple[int, int]:
+    return (3900, 4100) if day >= dt.date(2026, 10, 22) else (2900, 3100)
 
 
 def check_forward() -> None:
@@ -466,55 +478,70 @@ def check_forward() -> None:
         add("ALERT", "forward.launchd", f"forward: launchd job {FWD_LABEL} not loaded")
         return
     runs = int(m.group(1)) if (m := re.search(r"\bruns = (\d+)", out)) else None
-    m = re.search(r"last exit code = (-?\d+)", out)
-    code = int(m.group(1)) if m else None
-    running = "state = running" in out
+    code = int(m.group(1)) if (m := re.search(r"last exit code = (-?\d+)", out)) else None
+    running = "state = running" in out or bool(py_pids("forward_collector.py"))
+    if code in FWD_EXIT:  # key/429 problems are urgent whatever the time
+        add("ALERT", "forward.exit", f"forward: last exit code {code}: {FWD_EXIT[code]}")
     st = _state()
     fwd = st.get("forward", {})
     today = now.date().isoformat()
-    if now.date() < FWD_FIRST_RUN or now.time() < FWD_CHECK_AFTER:
-        add("OK", "forward.waiting", f"forward: next check after 09:45; launchd runs={runs}, last exit {code}")
+    if fwd.get("date") == today and fwd.get("judged"):
+        add("OK", "forward.daily", f"forward: today's run already judged ({fwd.get('verdict')}; runs={fwd.get('runs')})")
         return
-    if fwd.get("date") == today and fwd.get("ok"):
-        add("OK", "forward.daily", f"forward: today's run already verified (runs={fwd.get('runs')})")
+    if now.date() < FWD_FIRST_RUN or now.time() < FWD_JUDGE_AFTER:
+        add("OK", "forward.waiting", f"forward: {'run in progress' if running else 'not running'}; judged after "
+            f"15:00 (launchd runs={runs}, last exit {code})")
         return
     if running:
-        add("OK", "forward.running", f"forward: daily run in progress (runs={runs})")
+        add("INFO", "forward.running", f"forward: run still in progress after 15:00 (runs={runs})")
         return
-    problems = []
+    problems, warn = [], None
     if code is None:
-        problems.append("launchd job has never exited (no run today)")
-    elif code != 0:
-        problems.append(f"last exit code {code}: {FWD_EXIT.get(code, 'unexpected failure')}")
-    if fwd.get("date") != today:  # first evaluation today: runs must exceed yesterday's count
-        prev = fwd.get("runs", 0)
-        if runs is None or runs < prev + 1:
-            problems.append(f"launchd runs={runs}, expected >= {prev + 1}")
+        problems.append("launchd job has never exited")
+    elif code != 0 and code not in FWD_EXIT:
+        problems.append(f"last exit code {code}: unexpected failure")
+    prev = fwd.get("runs", 0)
+    if runs is None or runs < prev + 1:
+        problems.append(f"launchd runs={runs}, expected >= {prev + 1} (no run today?)")
     status = subprocess.run([str(ROOT / ".venv" / "bin" / "python"), str(ROOT / "forward_collector.py"), "status"],
                             capture_output=True, text=True, cwd=ROOT, timeout=120).stdout
     snaps = int(m.group(1)) if (m := re.search(r"snapshots today: (\d+)", status)) else None
-    daily = next((ln.strip() for ln in status.splitlines() if re.search(r"#\d+ daily", ln)), "")
-    # the 09:15 PDT run lands on today's UTC date; after the UTC rollover (17:00 PDT) `snapshots today`
-    # counts the next UTC day, so only check the count before then
-    utc_rolled = dt.datetime.now(dt.timezone.utc).date().isoformat() != today
+    daily = next((ln.strip() for ln in status.splitlines() if re.search(r"#\d+ daily ", ln)), "")
+    utc_rolled = now.time() >= FWD_UTC_ROLLOVER
     if not snaps and not utc_rolled:
         problems.append(f"snapshots today: {snaps}")
-    if "stopped='" in daily or "UNFINISHED" in daily:
-        problems.append(f"newest daily run: {daily[:160]}")
     if daily and f" {today}T" not in daily:
         problems.append(f"newest daily run is not from {today}: {daily[:80]}")
+    elif "UNFINISHED" in daily:
+        problems.append(f"daily run UNFINISHED with no forward_collector process: {daily[:120]}")
+    elif "stopped='" in daily:
+        if FWD_ROLLING_STOP in daily and code == 0:
+            warn = f"daily stopped at the rolling 24h call budget (normal stop after the 3 h wait): {daily[:160]}"
+        else:
+            problems.append(f"daily run stopped: {daily[:200]}")
     logf = ROOT / "data" / "forward" / "logs" / f"forward_collector-{now:%Y-%m}.log"
-    bad = [ln for ln in tail(logf, 4000) if ln.startswith(today) and re.search(r"ERROR|stopped for today", ln)]
-    if bad:
-        problems.append(f"{len(bad)} ERROR/stopped lines today, last: {bad[-1][:160]}")
+    today_lines = [ln for ln in tail(logf, 20000) if ln.startswith(today)]
+    stops = [ln for ln in today_lines if "stopped for today" in ln]
+    errors = [ln for ln in today_lines if " ERROR " in ln]
+    if stops and not warn:
+        problems.append(f"'stopped for today' in log: {stops[-1][:160]}")
+    lo, hi = _fwd_expected(now.date())
+    detail = (f"exit {code}, runs={runs}, snapshots today {snaps if not utc_rolled else 'n/a (UTC rolled)'} "
+              f"(expect ~{lo:,}-{hi:,}), {len(errors)} ERROR lines (network errors are retried/skipped)")
     if problems:
-        add("ALERT", "forward.daily", "forward: " + "; ".join(problems))
+        add("ALERT", "forward.daily", "forward: " + "; ".join(problems) + f" [{detail}]")
+        verdict = "FAIL"
     else:
-        lvl = "OK" if utc_rolled or 2900 <= (snaps or 0) <= 3100 else "INFO"
-        add(lvl, "forward.daily", f"forward: exit 0, runs={runs}, snapshots today {snaps} (expect ~2,900-3,100)")
-        if fwd.get("date") != today:
-            st["forward"] = {"date": today, "runs": runs, "ok": True}
-            STATE.write_text(json.dumps(st))
+        streak = fwd.get("rolling_streak", 0) + 1 if warn else 0
+        fwd["rolling_streak"] = streak
+        if warn:
+            add("ALERT" if streak >= 2 else "WARN", "forward.rolling",
+                f"forward: {warn}" + (f"; {streak} days in a row: tell the lead" if streak >= 2 else ""))
+        in_range = utc_rolled or (snaps is not None and lo <= snaps <= hi)
+        add("OK" if in_range else "INFO", "forward.daily", f"forward: {detail}")
+        verdict = "WARN" if warn else "OK"
+    st["forward"] = {**fwd, "date": today, "runs": runs, "judged": True, "verdict": verdict}
+    STATE.write_text(json.dumps(st))
 
 
 # --- power, and the watchdog's own waker -----------------------------------------------------
