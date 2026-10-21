@@ -234,6 +234,11 @@ def quota_math(target: int) -> dict:
     runs = pd.read_sql("SELECT snap_date, command, calls_used FROM runs", con)
     con.close()
     disc = runs[runs.command == "discover"].groupby("snap_date").calls_used.sum()
+    con = connect_ro()
+    big = con.execute("SELECT calls_used, (julianday(finished_at) - julianday(started_at)) * 1440 FROM runs "
+                      "WHERE command = 'daily' AND finished_at IS NOT NULL ORDER BY calls_used DESC LIMIT 1").fetchone()
+    con.close()
+    calls_per_min = big[0] / big[1]
     steady = a[a.day > "2026-10-19"]  # day 1 included the pilot and the first full discover
     overhead = float(((steady.calls - steady.snaps - disc.reindex(steady.day).fillna(0).values) / steady.snaps).max())
     rescan = int(disc.max())
@@ -244,7 +249,12 @@ def quota_math(target: int) -> dict:
             "observed_full_rescan_calls": rescan, "rescan_reserve": rescan_reserve,
             "worst_case_day_calls": worst, "budget": fc.DEFAULT_BUDGET, "headroom": fc.DEFAULT_BUDGET - worst,
             "max_safe_target": math.floor((fc.DEFAULT_BUDGET - rescan_reserve) / (1 + retry_margin)),
-            "minutes_at_3rps": round(worst / fc.DEFAULT_RATE / 60, 1)}
+            # TM's quota is a rolling 24 h window (collector-path, 2026-10-21): a catch-up run less than
+            # 24 h before the next scheduled run leaves this many calls for the second run until the
+            # first run's calls age out
+            "back_to_back_second_run_calls_available": max(0, fc.DEFAULT_BUDGET - math.ceil(target * (1 + retry_margin))),
+            "observed_calls_per_min": round(calls_per_min, 1),
+            "est_run_minutes_observed_rate": round(worst / calls_per_min)}
 
 
 def main() -> dict:
@@ -277,7 +287,7 @@ def main() -> dict:
             milestone = {7: date(2026, 11, 30), 14: date(2026, 12, 18), 30: date(2027, 1, 15),
                          60: date(2027, 2, 16)}[h]
             sc["ipw"][f"h{h}_by_{milestone.isoformat()}"] = ess(paths, milestone)
-            if name.split()[0] in ("A", "B"):
+            if name.split()[0] in ("A", "C"):
                 curve[(name[0], h)] = paths.groupby("date").p_priced.sum().sort_index().cumsum()
         out["scenarios"][name] = sc
         print(name, json.dumps({k: v for k, v in sc.items() if k not in ("dates",)}, default=str)[:600])
@@ -299,6 +309,11 @@ def main() -> dict:
         lost.append((len(q), int(q.priced.astype(bool).sum())))
     out["outage_one_day_h7_paths_lost_nov_mean"] = round(float(np.mean([a for a, _ in lost])), 1)
     out["outage_one_day_h7_priced_paths_lost_nov_mean"] = round(float(np.mean([b for _, b in lost])), 1)
+    con = connect_ro()
+    stop = con.execute("SELECT calls_used FROM runs WHERE stopped_reason LIKE 'daily call budget%' "
+                       "ORDER BY run_id LIMIT 1").fetchone()
+    con.close()
+    out["first_budget_stop_calls"] = stop[0] if stop else None
     out["chart"] = chart(curve)
     (TABLES / "readiness_summary.json").write_text(json.dumps(out, indent=2, default=str))
     print(wide.to_string())
@@ -312,7 +327,7 @@ def chart(curve: dict) -> str:
             if hh != h:
                 continue
             ax.plot(pd.to_datetime(ser.index), ser.values, color=S1 if sc == "A" else S2, linewidth=2,
-                    label="status quo 3,000" if sc == "A" else "expand to 4,000")
+                    label="old target 3,000 (far 60%)" if sc == "A" else "in force: 4,000 (far 30%)")
         for n in THRESHOLDS:
             ax.axhline(n, color=MUTED, linewidth=0.8, linestyle="--")
         ax.set_title(f"{h}-day paths", fontsize=11)

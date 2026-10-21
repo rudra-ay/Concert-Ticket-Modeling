@@ -54,3 +54,16 @@ L23 (SHAP/PDP descriptive): PENDING edit E6
   - Line 3: "bill lookups pending" / "weather (addendum later)" are stale, since H7c and H10 are reported.
   - F10: "Outdoor × weather follows as an addendum" is stale too.
   - Data caveats: "Within-tour contrasts absorb this" is too strong, because coverage varies within tour (progress, metro size). Say "IPW and the ≥ 80%-coverage specs test it".
+
+## Round 2 (edits E1–E7)
+
+Verified on reports/level_findings.md after the edits. autocheck --level is 41/0/0. The test touch log is unchanged (2 entries; the final touch is still 2026-10-21T17:54Z). The new numbers trace to power.csv, reunion_checks.csv and ablation.csv. The reunion checks reproduce mine: gap 0.221, trends 0.169, placebo 0.002. The 196-trend variant (+9.3%) is shown, and it's correctly not primary: for artists observed in two periods, an artist-specific line exactly absorbs the reunion contrast.
+
+L4 (H2a, weekend: not significant after BH, q 0.052; a consistent +1–2% at the edge of detectability): APPROVED
+L12 (H7a, bill size not supported): APPROVED
+L17 (H8b, reunion +25.0%, +18.4% with artist-specific trends; association, 10 artists): APPROVED
+L20 (H9, genre descriptive; only country below pop survives Bonferroni across 10 contrasts): APPROVED
+L21 (unseen-artist GBM test MAE 0.275 vs year median 0.347; 2026-snapshot scope, not an on-sale forecast): APPROVED
+L23 (SHAP/PDP descriptive associations): APPROVED
+
+Task 7 is fully approved: L1–L23.

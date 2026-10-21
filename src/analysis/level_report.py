@@ -34,11 +34,11 @@ NOTES = {
     "H4": "A row covering ≥ 2 nights at one venue vs single-night rows of the same tour. Extra nights are added because demand is strong, so this is demand revealing itself (reverse causality), not an effect of adding nights. Ex post.",
     "H5": "**Association only.** Tickets available per show is configured in response to demand (OUTCOME), so this regressor can't test a venue-size effect. Shown because it's the best-measured size variable. Two-way clustered by split_key × venue.",
     "H5w": "**The primary venue-size test.** Wikidata capacity is today's capacity, often in a sports configuration, so it measures the room, not the night's configuration (venue table at its priced milestone). Two-way clustered by split_key × venue.",
-    "H5o": "Indoor/outdoor comes from the Wikidata class (domed stadiums typed as plain 'stadium' are misread as outdoor). Controls Wikidata capacity, not the OUTCOME tickets per show. Two-way clustered by split_key × venue. Outdoor × weather follows as an addendum.",
+    "H5o": "Indoor/outdoor comes from the Wikidata class (domed stadiums typed as plain 'stadium' are misread as outdoor). Controls Wikidata capacity, not the OUTCOME tickets per show. Two-way clustered by split_key × venue. Outdoor × weather is tested in F15 (H10).",
     "H5f": "**Association only** (it uses the OUTCOME tickets per show). Ratio of pageviews (365-d mean) to tickets per show, 2016+. The unrestricted model below shows which side carries it.",
     "H6a": "Within-artist changes in Wikipedia attention (365-d mean before the show), controlling for momentum. The window ends the day before the show, after most on-sales: POST_ONSALE.",
     "H6b": "The 'Dom Dolla effect': short-run attention growth (last 30 d vs 61–90 d before the show), controlling for level. Mostly after the on-sale, when prices are already set, so a null here doesn't rule out a momentum effect on the primary price-setting decision.",
-    "H7a": "Within tour: nights with more opening acts vs fewer. Only rows whose opener cell is filled (a blank cell means unknown, not none). Opener *draw* (opener pageviews) waits on the bill table's lookup phase.",
+    "H7a": "Within tour: nights with more opening acts vs fewer. Only rows whose opener cell is filled (a blank cell means unknown, not none). Opener *draw* (opener pageviews) is tested separately in F14 (H7c).",
     "H7b": "Within performer group (split_key FE + year): the same performers' co-headline package tours vs their solo tours (e.g. Elton John & Billy Joel vs Elton John). Few groups carry this contrast, so the wild bootstrap p and a leave-one-group-out range are reported.",
     "H7c": "Within tour unit: nights whose best-known opener had more Wikipedia attention in the 90 days before the show. Only linked openers with a usable pageview window (mostly 2016+), so n is small. The window ends the day before the show, after the on-sale (POST_ONSALE); a bigger opener is also typically booked for bigger markets, which the tour FE only partly absorbs.",
     "H10": "Within tour unit, single-night shows: evening rain (≥ 1 mm, 18–23 h local) at an outdoor venue, beyond any rain effect at indoor venues (rain and outdoor are controlled). Average price mostly reflects tickets sold before the weather is known, so a large effect isn't expected. Show-day weather is SHOWDAY context, never a predictor.",
@@ -112,6 +112,10 @@ def main() -> None:
     mval_path = OUT_TABLES / "model_results_valid.json"
     mval = json.loads(mval_path.read_text()) if mval_path.exists() else None
     sm = cov["_summary"]
+    reunion_artists = pd.read_csv(OUT_TABLES / "reunion_artists.csv")
+    reunion_checks = pd.read_csv(OUT_TABLES / "reunion_checks.csv")
+    ablation = pd.read_csv(OUT_TABLES / "ablation.csv")
+    power = pd.read_csv(OUT_TABLES / "power.csv")
     tx = extras["tour_units"]
     tu = {"keys_label": tx["keys_with_split_label"], "rows_label": tx["rows_with_split_label"],
           "keys_multi": tx["keys_with_2plus_units_in_sample"], "rows_multi": tx["rows_in_keys_with_2plus_units"],
@@ -129,10 +133,20 @@ def main() -> None:
         b = h[(h.hid == hid) & (h.sens == "base")].iloc[0]
         n += 1
         v = verdict(h, hid)
+        if hid == "H2a":
+            ws = h[(h.hid == "H2a") & (h.status == "ok")]
+            us = ws[ws.sens == "US only"].iloc[0]
+            mde = 100 * (np.exp(power.loc[power.hypothesis == "Weekend premium", "clustered MDE"].iloc[0]) - 1)
+            v = (f"Not significant after BH (q = {b.q:.3f}). Small and positive in every sensitivity "
+                 f"({ws.effect_pct.min():+.1f}% to {ws.effect_pct.max():+.1f}%; US {us.effect_pct:+.1f}%, p {us.p:.3f}). "
+                 f"Consistent with a 1–2% weekend premium at the edge of detectability (MDE ≈ {mde:.1f}%)")
         q = "—" if pd.isna(b.q) else f"{b.q:.3f}"
         pu = "—" if b.status != "ok" else (f"{b.p_wild:.4f} (wild)" if pd.notna(b.p_wild) else f"{b.p:.4f}")
         eff_txt = fmt_eff(b) if b.status == "ok" else b.status
         label = b.label if isinstance(b.label, str) and b.label else "none"
+        if hid == "H8b":
+            trend = reunion_checks[reunion_checks.spec.str.contains(">= 3 tour units")].iloc[0]
+            eff_txt = f"{eff_txt} ({trend.pct:+.1f}% with artist-specific trends)"
         summary_rows.append(f"| F{n} [L{n}] | {hid} {b['name']} | {eff_txt} | {pu} | {q} | {v} | {label} |")
         extra = ""
         if hid == "H1a":
@@ -143,6 +157,22 @@ def main() -> None:
                      f"Cheapest: {', '.join(f'{m} {100 * (np.exp(c) - 1):+.0f}%' for m, c in zip(bot.metro, bot.coef))}. "
                      + (f"US-only: SD {100 * us.coef.iloc[0]:.1f} log points (p = {us.p.iloc[0]:.3f})." if len(us) else "")
                      + " Chart: charts/level_metros.png.")
+        if hid == "H8b":
+            alines = "\n".join(f"| {r.artist} | {r.reunion_years} ({r.reunion_shows}) | {r.comparison_years} ({r.comparison_shows}) |"
+                                for r in reunion_artists.itertuples())
+            clines = "\n".join(f"| {r.spec} | {r.pct:+.1f}% [{100 * (np.exp(r.ci_lo) - 1):+.1f}, {100 * (np.exp(r.ci_hi) - 1):+.1f}] | {r.coef:.3f} ({r.se:.3f}) | {r.p:.4f} | {int(r.n):,} |"
+                                for r in reunion_checks.itertuples())
+            extra = (f"\n\n**Who carries the contrast** (reunion-tour years (shows) vs the same artist's other sample years (shows)):\n\n"
+                     f"| artist | reunion | comparison |\n|---|---|---|\n{alines}\n\n"
+                     "Two of these are unusual reunions: Guns N' Roses 2016–19 is compared only with *later* tours, and Pink Floyd's "
+                     "1987–88 'reunion' label sits on the post-Waters relaunch. The headline is an association between reunion-labelled "
+                     "tours and price, not the effect of reuniting.\n\n"
+                     f"**Robustness checks** (src/analysis/level_reunion.py; reports/level_tables/reunion_checks.csv):\n\n"
+                     f"| spec | effect (95% CI) | coef (SE) | p | n |\n|---|---|---|---|---|\n{clines}\n\n"
+                     "The gap control holds the time since the artist's previous show fixed. The artist-trend check gives each artist "
+                     "with ≥ 3 tour units its own linear price trend; the variant that also gives two-period artists a trend absorbs most "
+                     "of the contrast, because for them a line through two periods *is* the reunion contrast. The placebo flags each "
+                     "non-reunion artist's last tour and finds nothing, so late-career tours in general don't carry the premium.")
         if hid == "H5f":
             e = extras["H5f_unrestricted"]
             extra = (f"\n\nUnrestricted (same sample and FE): log pageviews {e['b_log_pv365']:+.3f} (SE {e['se_log_pv365']:.3f}), "
@@ -168,9 +198,9 @@ Skeptic: [ ] approve  [ ] reject: ______
                             for r in gt.itertuples())
         findings.append(f"""### F{n} [L{n}]. H9: Genre (DESCRIPTIVE, outside the BH family)
 
-**Verdict: OUTSIDE THE BH FAMILY (a priori): genre is fixed per artist, so these are between-artist contrasts with an effective n of artists, not shows.** Log price on genre dummies (reference: pop) with year FE, clustered by performer group. Only country is clearly below pop; every other CI spans zero. Genres are current Wikidata/MusicBrainz labels for the whole career, and the comparison also carries every other way the artists differ (scale, era, venue mix). Chart: charts/level_genre.png; table: reports/level_tables/genre.csv.
+**Verdict: OUTSIDE THE BH FAMILY (a priori): genre is fixed per artist, so these are between-artist contrasts with an effective n of artists, not shows.** Log price on genre dummies (reference: pop) with year FE, clustered by performer group. Only country is clearly below pop, and it is the only contrast that survives a Bonferroni correction across the 10; every other CI spans zero. Genres are current Wikidata/MusicBrainz labels for the whole career, and the comparison also carries every other way the artists differ (scale, era, venue mix). Chart: charts/level_genre.png; table: reports/level_tables/genre.csv.
 
-| genre | artists | shows | vs pop (95% CI) | p |
+| genre | artists | shows | vs pop (95% CI) | p (nominal, 10 unadjusted contrasts) |
 |---|---|---|---|---|
 {glines}
 
@@ -215,7 +245,11 @@ Test split ({mres['n']['test']:,} shows, {mres['artist_keys']['test']} artist_ke
             test_txt = "**Test split not yet evaluated.**\n\n"
         model_txt += f"""### F{n} [L{n}]. Predicting price for an unseen artist (artist held out)
 
-{test_txt}Valid split (used for tuning, so optimistic): GBM {t.loc['GBM', 'mae_log']:.3f} vs. {g['baseline']} {t.loc[g['baseline'], 'mae_log']:.3f}, difference {g['mae_diff_log']:+.3f} [{g['ci95'][0]:+.3f}, {g['ci95'][1]:+.3f}]. The leave-one-out artist median ignores career time (it is one number per artist across decades), so it is a weak reference for long-career artists; on valid it does worse than the GBM ({t.loc[ref, 'mae_log']:.3f}), on test better. It is a reference, not a ceiling.
+**Scope.** "Unseen artist" means an artist with no price history in the training data, described by 2026 snapshot features (ListenBrainz listeners, Wikidata genre and career data, today's venue capacity) that postdate most past shows. This is a cross-sectional benchmark, not a forecast made at on-sale time.
+
+{test_txt}**Ablation (VALID split only, frozen hyperparameters; src/analysis/level_ablation.py):** {'; '.join(f"{r.features} ({r.n_features} features) {r.valid_mae_log:.3f}" for r in ablation.itertuples())}. Removing the ListenBrainz snapshot costs about 0.01 log points of MAE, and removing the career variables as well costs about 0.03, so part of the accuracy rests on snapshot information. The test split was not used for this.
+
+Valid split (used for tuning, so optimistic): GBM {t.loc['GBM', 'mae_log']:.3f} vs. {g['baseline']} {t.loc[g['baseline'], 'mae_log']:.3f}, difference {g['mae_diff_log']:+.3f} [{g['ci95'][0]:+.3f}, {g['ci95'][1]:+.3f}]. The leave-one-out artist median ignores career time (it is one number per artist across decades), so it is a weak reference for long-career artists; on valid it does worse than the GBM ({t.loc[ref, 'mae_log']:.3f}), on test better. It is a reference, not a ceiling.
 
 {_md(t)}
 
@@ -249,7 +283,7 @@ Skeptic: [ ] approve  [ ] reject: ______
 
 **Verdict: descriptive. These are associations the model exploits, not effects.** Top features by mean |SHAP| (log points; GBM refit on train + valid): {', '.join(f'{k} {v:.3f}' for k, v in top.items())}. Charts: charts/level_shap.png, charts/level_pdp.png (top 10 PDPs, % vs. average prediction).
 
-The interaction screen (mean |SHAP interaction| on 600 rows) is led by {', '.join(f'{a} × {b_}' for a, b_ in zip(inter.a[:4], inter.b[:4]))}. Genre matters little once scale and career are known: its PDP spans a few percent, while the raw country-vs-pop gap in F20 is about 26%. So the descriptive genre gap is mostly carried by artist scale and career variables. Year × ListenBrainz interactions are expected as an **artifact**: a 2026 listener count describes recent shows better than 1990s ones. They should not be read as "popularity mattered more recently". Chart: charts/level_interactions.png.
+The interaction screen (mean |SHAP interaction| on 600 rows) is led by {', '.join(f'{a} × {b_}' for a, b_ in zip(inter.a[:4], inter.b[:4]))}. Genre matters little once scale and career are known: its PDP spans a few percent, while the raw country-vs-pop gap in F20 is about 26%. This is consistent with genre mattering little once scale and career are known; a PDP span next to a raw gap is not a decomposition. Year × ListenBrainz interactions are expected as an **artifact**: a 2026 listener count describes recent shows better than 1990s ones. They should not be read as "popularity mattered more recently". Chart: charts/level_interactions.png.
 
 Skeptic: [ ] approve  [ ] reject: ______
 
@@ -258,7 +292,7 @@ Skeptic: [ ] approve  [ ] reject: ______
     p = cur["pooled"]
     text = f"""# LEVEL findings (task 6): what explains a show's average ticket price?
 
-Generated by `src/analysis/level_report.py` from `level_hypotheses.py`, `level_model.py`, `selection.py` and `currency_test.py` (rerun all with `src/analysis/level.py`). Data: data/shows.parquet built {sm['built']} **after the review-1 fixes**, with an analysis sample of {sm['analysis_sample']:,} shows, {sm['analysis_artist_keys']} artist_keys and {sum(sm['split_keys'].values())} performer groups. Venue table at its priced milestone ({cov.get('venue', {}).get('pct_analysis_filled')}% of the sample resolved); weather {cov.get('weather', {}).get('pct_analysis_filled')}% `ok` (addendum later); bill flags in, bill lookups pending.
+Generated by `src/analysis/level_report.py` from `level_hypotheses.py`, `level_model.py`, `selection.py` and `currency_test.py` (rerun all with `src/analysis/level.py`). Data: data/shows.parquet built {sm['built']} **after the review-1 fixes**, with an analysis sample of {sm['analysis_sample']:,} shows, {sm['analysis_artist_keys']} artist_keys and {sum(sm['split_keys'].values())} performer groups. Final collection: venue table resolved for {cov.get('venue', {}).get('pct_analysis_filled')}% of the sample, weather `ok` for {cov.get('weather', {}).get('pct_analysis_filled')}%, bill table complete (flags and lookups).
 
 ## Method
 
@@ -274,7 +308,7 @@ Generated by `src/analysis/level_report.py` from `level_hypotheses.py`, `level_m
 
 ## Data caveats that bound every finding
 
-- **Selection** (src/analysis/selection.py): {100 * sel['coverage_all']:.0f}% of played shows in documented tours are covered. Coverage falls over a tour (within-tour LPM: progress {sel['lpm']['tour_progress']['b']:+.3f}) and rises with metro size ({sel['lpm']['log_metro_pop_f']['b']:+.3f} per log point) and venue size. Better-documented tours price slightly higher within an artist's era ({sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['b']:+.3f} per unit of tour coverage, SE {sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['se']:.3f}). Within-tour contrasts absorb this; the IPW and ≥ 80%-coverage specs test the rest.
+- **Selection** (src/analysis/selection.py): {100 * sel['coverage_all']:.0f}% of played shows in documented tours are covered. Coverage falls over a tour (within-tour LPM: progress {sel['lpm']['tour_progress']['b']:+.3f}) and rises with metro size ({sel['lpm']['log_metro_pop_f']['b']:+.3f} per log point) and venue size. Better-documented tours price slightly higher within an artist's era ({sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['b']:+.3f} per unit of tour coverage, SE {sel['strong_nights']['price_rel_artist_era_on_tour_coverage']['se']:.3f}). Coverage also varies within tours, so within-tour contrasts don't remove this by construction; the IPW and ≥ 80%-coverage specs test it.
 - **Currency** (reports/currency_test.md): within-tour FX slopes show no local-currency contamination. Pooled θ = {p['theta']:+.3f}, 95% CI [{p['ci95_t'][0]:+.3f}, {p['ci95_t'][1]:+.3f}]; CA {cur['per_country']['CA']['theta']:+.3f}; AU {cur['per_country']['AU']['theta']:+.3f} (the opposite sign from contamination).
 - **Superstar sample:** these results describe big Boxscore-reporting tours only.
 

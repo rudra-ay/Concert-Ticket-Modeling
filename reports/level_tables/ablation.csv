@@ -1,0 +1,4 @@
+features,n_features,valid_mae_log,n_valid
+all features,41,0.2116688810125944,3694
+without ListenBrainz,39,0.22196124884029325,3694
+without ListenBrainz and career variables,36,0.23979780404077133,3694

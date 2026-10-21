@@ -29,7 +29,8 @@ COMMON = ("Sample: events with a complete priced 30-day path (first snapshot >= 
           "'IPW (selection)'. SE clustered by artist (first attraction id); p and 95% CI from t(G_eff - 1); "
           "null-imposed wild cluster bootstrap (Webb, 1,999 draws) and leave-one-artist-out range if G_eff < 30.")
 TEST_DATE = ("first daily run on or after the date the panel reaches N >= 500 complete priced 30-day paths "
-             "(readiness_schedule.csv, scenario in force; 2026-12-22 under the status quo), run once")
+             "(readiness_schedule.csv, scenario in force: C since 2026-10-22, expected 2026-12-15; it would be "
+             "2026-12-22 under the old 3,000 target), run once")
 
 FAMILY = {
     "H20a": {"claim": "Primary face-value repricing becomes more frequent as the show approaches.",
@@ -46,6 +47,12 @@ FAMILY = {
             "test": "LPM: move ~ wide_spread + days-to-show bucket dummies + snapshot-date FE (year); two-sided test "
                     "on wide_spread. wide_spread is measured as of the first path day (no look-ahead).",
             "fe": "days bucket + snapshot date (year)", "source": "LITERATURE H9, primary side"},
+    "H37": {"claim": "Primary face-value changes concentrate around scheduled sale-phase dates (public on-sale start, "
+                     "presale windows) rather than spreading evenly over days to show.",
+            "test": "LPM: move ~ near_sale_phase (snapshot within 3 days after a public_sale_start or presale "
+                    "start/end recorded as of the previous snapshot) + days-to-show bucket dummies + snapshot-date "
+                    "FE (year); one-sided test that near_sale_phase > 0.",
+            "fe": "days bucket + snapshot date (year)", "source": "LITERATURE H37 (CMA 2025; Xu et al. 2019)"},
 }
 RESALE = "resale-price hypothesis: the forward panel is PRIMARY face value; needs Rebrowser StubHub/Gametime or marketplace data"
 EXCLUDED = {
@@ -54,7 +61,8 @@ EXCLUDED = {
     "H10": RESALE, "H11": RESALE, "H12": RESALE + " plus weather join", "H13": RESALE,
     "H14": RESALE + " at hourly resolution (the collector is daily)", "H17": RESALE + " (price variance)",
     "H18": "needs listing-format (auction vs fixed) data, which no approved source has",
-    "H21": RESALE,
+    "H21": RESALE, "H32p": "PATH half of H32 (state resale caps): " + RESALE,
+    "H35": RESALE + " (resale premium by platform)", "H36": RESALE + " with section/tier",
 }
 LEVEL_ONLY = {"excl. $ outside US": "n/a: TM panel is US-only USD",
               "excl. aggregates": "n/a: LEVEL concept (multi-night box office aggregates)",
@@ -98,6 +106,14 @@ def main() -> None:
                  "clusters": np.nan, "cluster2": "", "in_family": False, "descriptive": True, "q": np.nan,
                  "label": "SNAPSHOT", "loo_min": np.nan})
     pd.DataFrame(rows).to_csv(TABLES / "hypotheses.csv", index=False)
+    # design constants quoted in the findings (not results)
+    (TABLES / "constants.json").write_text(json.dumps({
+        "ci_level_pct": 95, "drift_null_daily_move_rate_pct": 5, "wide_spread_ratio": 3, "near_sale_phase_days": 3,
+        "wild_bootstrap_draws": 1999, "wild_below_effective_clusters": 30, "move_threshold_usd": 0.005,
+        "missing_day_share_allowed": 0.1, "discover_window_days": 120, "far_band_days": 60, "far_share_pct": 60,
+        "ranges_share_pct": 80, "tm_daily_quota": 5000, "collector_budget": 4500, "rate_limit_available_stop": 250,
+        "catchup_max_wait_h": 3, "min_paths_summary": 500, "min_paths_moderators": 1000,
+    }, indent=2))
     print(f"family {fam}; excluded {len(EXCLUDED)}; rows {len(rows)}")
 
 

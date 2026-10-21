@@ -374,6 +374,7 @@ def main() -> None:
     sel = selection.main()
     charts["selection"], sel_share = chart_selection(sel)
     hyp, extra = hypotheses(s, cov)
+    hyp.to_csv(ROOT / "reports/level_tables/power.csv", index=False)  # traceable source for MDEs quoted in level_findings
 
     # duplicates / outliers
     dups = d[d.dup_boxoffice_group.notna()]
