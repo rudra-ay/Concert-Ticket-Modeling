@@ -38,3 +38,15 @@ Check scripts (all read-only on data/): `src/review/r1_*.py`.
 8. **The power table omits year FE.** The report itself calls year FE mandatory. With year FE: venue size 0.035 → 0.022, income 0.012 → 0.007, farewell 0.725 → 0.171, co-headline 0.362 → 0.169; the rest are unchanged. Recompute with year FE, use t(G−1) critical values for G < 30 (farewell 0.205, co-headline 0.177) and a wild cluster bootstrap there, report G (split_key clusters) instead of artist_id counts, and note that the city row assesses only the income slope.
 9. **CPI** is approved, with one minor fix: deflate aggregates at their midpoint month. Katy Perry's Resorts World unit is 80 shows over 675 days, and the first-month deflator is 6.5% off. 4 units span more than 60 days.
 10. **Aggregates as one unit** are approved. Minor: hand-check the 7 priced units whose placed member count is below aggregate_n_shows, because agg_n_venues may be undercounted for them.
+
+## Round 3 (item 5)
+
+Verdict: **APPROVED.** Checked against the rebuilt data/shows.parquet (2026-10-20 18:51, 23,323 sample rows) with `src/review/r1e_item5.py`.
+
+- **A1 (pseudo-tours):** `tour_unit` leaves 0 units of 5 or more shows spanning more than 3 years (max 1.87 yr, p90 1.18 yr). In the analysis sample, 53 tour_keys (3,614 rows) are split. The analyst's 63 keys / 3,807 rows count beyond the sample. No unit spans two artist_keys or two splits.
+- **The leg contrast survives the split:** 433 tour units have leg variation, vs 450 tour_keys.
+- **price_rel_tour:** my independent recompute matches exactly (22,933 rows, max diff 0.0). corr(price_rel_tour, show year − tour-unit median year) = 0.024, down from 0.095.
+- **A2 (era buckets):** `year_bucket_5` is constant within every tour unit. price_rel_artist_era also matches my recompute exactly (23,168 rows). Its residual correlation with within-cell year is 0.169, so **year FE remains mandatory** in every era model, as the analyst already committed.
+- The old target `price_rel_artist_median` is deprecated and must not appear in task 7.
+
+With this, review 1 is fully approved (items 1–10).
