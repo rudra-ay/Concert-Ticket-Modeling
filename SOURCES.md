@@ -183,6 +183,14 @@ Several official API hosts serve a robots.txt that disallows everything, or disa
 - **Collection spec:** one call per venue covering all show dates in that venue's range (`start_date`/`end_date`), about 2–5k calls at least 5 s apart. Cache: `data/raw/open_meteo/<venue_qid>.json`. License: **CC BY 4.0, attribute "Weather data by Open-Meteo.com"; non-commercial only.**
 - **Incident log (collector-context):** 2026-10-19 ~17:38 PDT, after 808 calls that UTC day: one 2xx response whose body wasn't JSON ("Expecting value: line 1 column 1": empty, or starting with "<"). **Its status and body were not captured**, so it can't be classified after the fact: it was either a transient empty body or an unrecognised page. There was no 403/429 and no other pushback. Earlier that evening there were ~9 read timeouts (120 s) on 20-venue × 14-day requests. Response: requests now hold a cross-process lock with end-to-start ≥ 5 s spacing and are logged in `data/raw/_requests/archive-api.open-meteo.com.csv`. Any 403/429, challenge page or non-JSON 2xx stops the run and is saved to `data/raw/_bad_responses/`. 5xx, empty bodies and timeouts back off (60 s, 120 s) and stop as NetworkDown after 3 in a row. The job runs under `src/context_supervise.py`.
 
+- **Faster collection (lead, 2026-10-20):** `src/weather_fast.py` replaced the per-venue plan, run under `src/collect_all.py`.
+  - **Requests:** each carries 10 venue windows, with per-location `start_date`/`end_date` lists, ≤ 14 days each.
+  - **Budget:** self-imposed at 95% of the free tier: 9,500/day, 4,750/h, 570/min. This raised the earlier 80% budget at the user's request to finish faster. The ledger is cross-process locked.
+  - **Measured usage:** 8,879 calls (Oct 20 UTC) and 8,076 (Oct 21 UTC), both under the 10,000 free limit.
+  - **Unchanged:** spacing stayed ≥ 5 s end-to-start.
+  - **Errors:** truncated streams ("Unexpected error while streaming data: timeoutReached") are classified as transient, not pushback. Batches that fail are retried in later passes.
+  - **Result:** weather for 98.2% of priced shows. Unpriced shows were not fetched, because no analysis uses them.
+
 ### A8. US Census ACS (bulk downloads)
 - **URL:** https://www2.census.gov/programs-surveys/acs/ (ACS 5-year tables, e.g. B19013 median household income and B01003 population, by CBSA)
 - **Serves:** LEVEL features (metro income, metro size).
