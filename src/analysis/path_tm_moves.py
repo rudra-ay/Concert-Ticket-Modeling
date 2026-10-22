@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from analysis.path_panel import PANEL  # noqa: E402
 from analysis.path_common import (DAYS_BUCKETS, INK2, NEUTRAL, S1, S2, TABLES, connect_ro,  # noqa: E402
                                   days_bucket, plt, save, wilson)
 
@@ -41,6 +42,10 @@ def load() -> pd.DataFrame:
         "w.source, w.selected_for_ranges "
         "FROM snapshots s JOIN watchlist w USING(event_id) WHERE s.http_status = 200", con)
     con.close()
+    # same exclusion as the PATH panel (path_panel.py): only snapshots taken before the show starts
+    keys = pd.read_parquet(PANEL, columns=["event_id", "snap_date"]).assign(in_panel=True)
+    s = s.merge(keys, on=["event_id", "snap_date"], how="left")
+    s["in_panel"] = s.in_panel.eq(True)
     s["valid"] = (s.has_price_ranges == 1) & (s.price_min > 0) & (s.price_max > 0)
     s["zero_placeholder"] = (s.has_price_ranges == 1) & ~s.valid
     s["pool"] = np.select([s.source == "discover-pilot", s.selected_for_ranges == 1],
@@ -114,7 +119,9 @@ def chart_rates(t: pd.DataFrame, by: str, title: str, fname: str, horizontal: bo
 
 def main() -> dict:
     TABLES.mkdir(parents=True, exist_ok=True)
-    s = load()
+    s_all = load()
+    started_pairs = int(pairs(s_all).both_valid.sum())  # incl. snapshots taken after the show started
+    s = s_all[s_all.in_panel].copy()
     p = pairs(s)
     snap_days = sorted(s.snap_date.unique())
     bv = p[p.both_valid]
@@ -170,6 +177,13 @@ def main() -> dict:
         "ranges_appeared": int(p.appeared.sum()), "ranges_disappeared": int(p.disappeared.sum()),
         "pairs_unpriced_before": int((~p.prev_valid).sum()),
         "status_changes": int(p.status_changed.sum()),
+        "pairs_both_priced_incl_started_shows": started_pairs,
+        "pairs_excluded_show_started": started_pairs - int(p.both_valid.sum()),
+        "priced_pairs_ranges_pool_pct": round(100 * float((bv.pool == "ranges pool").mean()), 1),
+        "priced_pairs_30plus_days_pct": round(100 * float((bv.days_until_show >= 30).mean()), 1),
+        "max_moves_per_event": int(bv[bv.moved].groupby("event_id").size().max()) if k else 0,
+        "median_days_to_show_of_moves": float(bv.loc[bv.moved, "days_until_show"].median()) if k else None,
+        "last_snapshot_seen_before_registration": max(snap_days),
         "charts": [chart_rates(t_days, "bucket", "Primary face value: daily move rate by days to show",
                                "path_tm_moves_by_daysout.png"),
                    chart_rates(t_genre, "genre_g", "Primary face value: daily move rate by genre",

@@ -82,8 +82,9 @@ Hypotheses are tagged **(LEVEL)** or **(PATH)** and numbered globally (H1, H2, â
 - **Hypothesis:**
   - **H17 (PATH):** when aggregate demand uncertainty is resolved late (e.g. by new album news), resale price variance increases near the event.
 
-### 9. Waisman (working paper), selling mechanisms for perishable goods in an online resale market [UNVERIFIED beyond the title]
-- **Status:** title confirmed from a Kellogg seminar listing (2017-11-02, Caio Waisman, Stanford). I could not verify the venue or findings.
+### 9. Waisman (working paper, 2017 seminar version), auctions vs. posted prices for NFL tickets on eBay [V-abstract via seminar listings; findings and publication venue UNVERIFIED]
+- **Status:** the UCL (2017-10-24) and Kellogg (2017-11-02) seminar abstracts (Caio Waisman, Stanford) are verified. They describe a structural model of forward-looking eBay sellers choosing auctions or posted prices for NFL tickets; in the counterfactuals, removing auctions cuts sellers' expected payoffs by 20% to 90%. The findings come only from those abstracts (no paper seen), so they are UNVERIFIED, and so is the publication venue.
+- **For PATH:** the selling mechanism and seller dynamics are part of the path.
 - **Hypothesis:**
   - **H18 (PATH):** fixed-price listings dominate auctions late in the horizon. Test only if listing-format data exist.
 
@@ -222,9 +223,7 @@ Added 2026-10-21 by collector-prices. Citations come from bibliographic records 
 - **Content:** using secondary-market transactions with IV, demand is elastic (unlike most primary-market estimates), and elasticity differs by seat quality.
 - **For PATH:** resale price paths should differ by seat tier (H36), and secondary sellers face elastic demand, which fits Sweeting's declining paths for most events.
 
-### 31. Waisman (working paper, 2017 seminar version), auctions vs. posted prices for NFL tickets on eBay [V-abstract via seminar listings; publication venue UNVERIFIED]
-- Updates item 9. The UCL (2017-10-24) and Kellogg (2017-11-02) seminar abstracts describe a structural model of forward-looking eBay sellers choosing auctions or posted prices for NFL tickets. In the counterfactuals, removing auctions cuts sellers' expected payoffs by 20% to 90%.
-- **For PATH:** the selling mechanism and seller dynamics are part of the path; relevant to H18 only if listing-format data exist.
+### 31. (merged into item 9: Waisman was listed twice)
 
 ### 32. Kemper & Breuer (2016), dynamic pricing for Bayern Munich [V-abstract; findings UNVERIFIED]
 - **Citation:** Kemper, C. & Breuer, C. (2016). "How Efficient is Dynamic Pricing for Sport Events? Designing a Dynamic Pricing Model for Bayern Munich." *International Journal of Sport Finance* 11(1): 4â€“15.
@@ -254,4 +253,4 @@ Added 2026-10-21 by collector-prices. Citations come from bibliographic records 
 **Directly competing PATH predictions to test head-to-head:** monotone decline to the end (H1, H21; Sweeting/MLB, StubHub newsroom) vs. a late rise for sold-out concerts (H4/H5; Leslie & Sorensen) vs. a peak at T-9 to T-10 days then a fall (H13; Chan et al. via Tompkins). The moderator to test is primary sell-out status and demand relative to capacity.
 
 ## Unverified items to check before citing in any write-up
-Connolly & Krueger Handbook pages; the Krueger 2019 book figures; Courty & Pagliero 2014; Black, Fox & Kochanowski 2007; Rosen & Rosenfield 1997; Courty 2003b; Courty 2019; Waisman (publication venue; the seminar abstract is verified, item 31); Zou; the Kemper & Breuer efficiency conclusion; Chan, Mathew & Ruggie 2009; the Bennett et al. pages; the Cui et al. volume and pages; the authorship of the 2023 SBM paper; and the GAO markup figures.
+Connolly & Krueger Handbook pages; the Krueger 2019 book figures; Courty & Pagliero 2014; Black, Fox & Kochanowski 2007; Rosen & Rosenfield 1997; Courty 2003b; Courty 2019; Waisman (findings and publication venue; only the seminar abstracts are verified, item 9); Zou; the Kemper & Breuer efficiency conclusion; Chan, Mathew & Ruggie 2009; the Bennett et al. pages; the Cui et al. volume and pages; the authorship of the 2023 SBM paper; and the GAO markup figures.

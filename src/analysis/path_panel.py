@@ -34,8 +34,8 @@ def build() -> pd.DataFrame:
     con = connect_ro()
     s = pd.read_sql("SELECT s.event_id, s.snap_date, s.snapshot_ts, s.start_utc, s.local_date, s.event_timezone, "
                     "s.days_until_show, s.event_status, s.genre, s.state, s.venue_id, s.attraction_ids, "
-                    "s.has_price_ranges, s.price_min, s.price_max, s.public_sale_start, "
-                    "w.selected_for_ranges, w.selection_prob, w.source "
+                    "s.has_price_ranges, s.price_min, s.price_max, s.public_sale_start, s.presales_json, s.hours_until_show, "
+                    "w.selected_for_ranges, w.selection_prob, w.source, w.added_at "
                     "FROM snapshots s JOIN watchlist w USING(event_id) WHERE s.http_status = 200", con)
     con.close()
 
@@ -63,6 +63,12 @@ def build() -> pd.DataFrame:
             "forbidden_features": ["price_min", "price_max", "event_status", "days_until_show"],
             "note": "No model is fitted in task 8 (no out-of-sample claim). Before any walk-forward fit, "
                     "features, split (time-ordered, grouped by artist) and target time are registered here."}
+    pw = TABLES / "power.json"
+    if pw.exists():  # F4: MDEs registered before any test (path_power.py)
+        pj = json.loads(pw.read_text())
+        spec["preregistration"] = {"mde_pp": pj["mde_pp"], "powered": pj["powered"], "rule": pj["rule"],
+                                   "n_test_paths": pj["n_test"], "moved_out_of_family": pj["moved_out_of_family"],
+                                   "seen_through": "2026-10-21", "test_code": "src/analysis/path_hypotheses.py"}
     TABLES.mkdir(parents=True, exist_ok=True)
     (TABLES / "path_spec.json").write_text(json.dumps(spec, indent=2))
     (TABLES / "panel_summary.json").write_text(json.dumps(summary, indent=2))

@@ -380,7 +380,10 @@ def check_touches(rep: Report, tables: Path, findings: Path, current_hash: str |
         rep.add("INFO", "holdout", "no test touches and no frozen spec: no out-of-sample claim may be made in the findings")
         return
     finals = [t for t in touches if t.get("kind") == "final"]
-    rep.ok(len(finals) == 1, "exactly one final test touch", "1 final touch", f"{len(finals)} final touches")
+    if touches:  # a spec may be frozen before its test date (PATH, review 4 F5); then no touch exists yet
+        rep.ok(len(finals) == 1, "exactly one final test touch", "1 final touch", f"{len(finals)} final touches")
+    else:
+        rep.add("INFO", "final test touch", "spec frozen, no touch yet: no out-of-sample claim may be made")
     spec_f = tables / "final_spec.json"
     if not spec_f.exists():
         rep.add("FAIL" if touches else "INFO", "frozen spec", "final_spec.json missing")
@@ -591,6 +594,12 @@ def run_path(rep: Report) -> None:
         sus = [c for c in used if re.search(r"final|last_price|future|lead_|next_|_after|outcome|resid", c, re.I)]
         rep.ok(not sus, "no future-looking feature names", "none", f"suspicious: {sus}", soft=True)
     check_touches(rep, tables, findings, None, None)
+    fs = tables / "final_spec.json"
+    if fs.exists():  # review 4 round 2: the frozen test code must still be the code on disk
+        want = json.loads(fs.read_text())["spec"].get("test_code_sha256")
+        got = hashlib.sha256((ROOT / "src/analysis/path_hypotheses.py").read_bytes()).hexdigest()
+        rep.ok(got == want, "path_hypotheses.py matches frozen test_code_sha256", got[:12],
+               f"current {got[:12]} != frozen {str(want)[:12]} (test code changed after freezing)")
     check_predictive_features(rep, tables, codes, None)
     check_causal_language(rep, findings, h)
     check_numbers(rep, findings, tables, [])

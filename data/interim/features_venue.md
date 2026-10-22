@@ -6,13 +6,16 @@ One row per `venue_id` in `shows_base.parquet`. Built by `src/features_venue.py`
 
 **Licenses:** Wikidata values are CC0 1.0. Title resolution uses Wikipedia dump metadata (CC BY-SA 4.0); attribute Wikipedia if titles are redistributed.
 
-**Partial writes:** the build writes every 200 venues, in order of priced shows (spine `avg_price_usd` present), then total shows. Venues not yet processed in a partial file have null `venue_qid` **and** null `venue_link_source`.
+**Status (final, 2026-10-20):** every venue of a priced show (4,400 of 13,048) was fully processed with network access. For the 8,648 remaining venues the user chose to skip uncached fetches: the table was finished by `src/venue_lean.py --cache-only`, so a remainder venue has values only where its items were already cached (3,377 of 8,648 have a QID). Null on a remainder venue means "not fetched", not "no match".
 
 | column | type | unit / values | source | null meaning |
 |---|---|---|---|---|
 | venue_id | string | `<venue_slug>__<city_slug>` | spine | never null |
 | venue_name, city, country | string | display text from the spine (first row) | spine | not in spine |
 | venue_wikilink | string | link target as written in the tour table, most common across the venue's rows | spine | the venue is never linked in the spine |
+| city_wikilink | string | the spine's city link target (most common for the venue) | spine | city never linked |
+| city_qid | string | Wikidata item of the spine city (via dumps) | dumps | city unlinked/unresolved |
+| n_priced_shows | int | rows with `avg_price_usd` | spine | never null |
 | n_shows | int | rows in shows_base for this venue | spine | never null |
 | n_priced_shows | int | rows with `avg_price_usd` | spine | never null |
 | venue_enwiki_title | string | canonical enwiki title after redirects | dumps | unresolved |
@@ -22,6 +25,7 @@ One row per `venue_id` in `shows_base.parquet`. Built by `src/features_venue.py`
 | p31_classes | string | `QID:label; …` of P31 (instance of), for audit | Wikidata | no item |
 | venue_type | string | stadium, arena, amphitheatre, theatre, club, festival ground | P31 class labels (one level of P279 superclasses if the direct class is unmapped), first matching rule in `TYPE_RULES` | class not mappable (e.g. "building", "sports venue") |
 | indoor_outdoor | string | `indoor`, `outdoor`, `retractable` | derived from the class: dome/indoor/covered stadium → indoor, retractable-roof stadium → retractable, other stadiums/amphitheatres/festival grounds → outdoor, arenas/theatres/clubs → indoor | venue_type null |
+| venue_type_source | string | `wikidata_class` (P31 label rules), `name_keyword` (venue name contains arena/stadium/amphitheatre/theatre/club/… when the class is generic like "sports venue" or "event venue"), `capacity_rule` (generic class and no name keyword: ≥ 30,000 stadium, ≥ 5,000 arena, else theatre) | | venue_type null |
 | type_matched_label | string | the class label that decided the type (audit) | | venue_type null |
 | lat, lon | float | WGS84 decimal degrees | P625 | no coordinates on the item |
 | coord_source | string | `wikidata` | | no coordinates |
@@ -30,8 +34,10 @@ One row per `venue_id` in `shows_base.parquet`. Built by `src/features_venue.py`
 | km_to_locality | float | km | great-circle distance from the venue's P625 to the locality's P625. Large values (> ~50 km) mean the item's coordinates and location disagree (e.g. Hard Rock Live: P131 Hollywood FL, P625 Orlando) | missing coords on either item |
 | country_iso2 | string | ISO 3166-1 alpha-2 | P17 → P297, else walk P131 up to 4 levels | no country found |
 | us_state | string | ISO 3166-2, e.g. `US-NY` | walk P131 (≤ 6 levels) to an item that is a U.S. state (Q35657), then its P300. **Filled independently of lat/lon.** | non-US venue, or the chain does not reach a state. Washington, D.C. (Q61) is mapped to `US-DC` explicitly |
-| qid_n_spine_cities | Int64 | number of distinct spine cities whose venues resolve to this QID | derived | venue unresolved |
-| link_ambiguous | boolean | `qid_n_spine_cities > 1`: the tour table linked a chain or generic article (e.g. `[[Hard Rock Live]]` for both Hollywood FL and Orlando shows). **Don't trust lat/lon/us_state on these rows; use the spine city.** | derived | venue unresolved |
+| qid_n_spine_cities | Int64 | distinct spine cities (city QIDs, else normalized names) whose venues resolve to this QID (informational) | derived | venue unresolved |
+| city_matches_wikidata | boolean | spine city (QID or name) appears on the venue item's P131 chain | derived, cache only | chain stops at county/state level, or city unknown |
+| km_city_to_venue | float | km | venue P625 to the spine city item's P625 | no city QID or missing coordinates |
+| link_ambiguous | boolean | **coordinates disagree with the place**: `km_city_to_venue > 50` or `km_to_locality > 50`. Catches chain/generic links (e.g. `[[Hard Rock Live]]` for Orlando shows) and self-contradictory items. **Don't trust lat/lon/us_state on these rows; use the spine city.** 53 priced shows | derived | venue unresolved |
 | opening_year | Int64 | year | P1619 (date of official opening), else P571 (inception) | missing on item |
 | capacity | Int64 | seats | P1083. Preference: the **concert** configuration (P518 = Q182832 concert, latest P585 year, then largest); else a preferred-rank value; else the latest unqualified value; else the max over configurations | no P1083 |
 | capacity_config | string | which rule picked `capacity`: `concert`, `preferred_rank`, `unqualified`, `max_of_configs` | | no P1083 |

@@ -6,20 +6,20 @@
     "2026-10-21"
   ],
   "n_snap_days": 3,
-  "snapshots_200": 9020,
-  "events": 3030,
+  "snapshots_200": 8981,
+  "events": 3025,
   "range_types": [
     "standard / USD"
   ],
-  "snapshots_with_ranges": 6324,
-  "zero_placeholder_snapshots": 893,
-  "day_pairs": 5990,
-  "pairs_both_priced": 3602,
+  "snapshots_with_ranges": 6312,
+  "zero_placeholder_snapshots": 887,
+  "day_pairs": 5956,
+  "pairs_both_priced": 3596,
   "pairs_moved": 17,
   "move_rate_pct": 0.47,
   "move_rate_ci95_pct": [
-    0.29,
-    0.75
+    0.3,
+    0.76
   ],
   "min_moves": 12,
   "max_moves": 11,
@@ -36,9 +36,16 @@
     1.5
   ],
   "ranges_appeared": 4,
-  "ranges_disappeared": 8,
-  "pairs_unpriced_before": 2380,
-  "status_changes": 51,
+  "ranges_disappeared": 6,
+  "pairs_unpriced_before": 2354,
+  "status_changes": 27,
+  "pairs_both_priced_incl_started_shows": 3602,
+  "pairs_excluded_show_started": 6,
+  "priced_pairs_ranges_pool_pct": 97.8,
+  "priced_pairs_30plus_days_pct": 67.9,
+  "max_moves_per_event": 1,
+  "median_days_to_show_of_moves": 17.0,
+  "last_snapshot_seen_before_registration": "2026-10-21",
   "charts": [
     "charts/path_tm_moves_by_daysout.png",
     "charts/path_tm_moves_by_genre.png"

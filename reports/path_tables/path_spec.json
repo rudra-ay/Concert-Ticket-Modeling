@@ -14,5 +14,43 @@
     "event_status",
     "days_until_show"
   ],
-  "note": "No model is fitted in task 8 (no out-of-sample claim). Before any walk-forward fit, features, split (time-ordered, grouped by artist) and target time are registered here."
+  "note": "No model is fitted in task 8 (no out-of-sample claim). Before any walk-forward fit, features, split (time-ordered, grouped by artist) and target time are registered here.",
+  "preregistration": {
+    "mde_pp": {
+      "H20a_N500": 0.75,
+      "H9p_N500": 1.5,
+      "H37_N500": 6.0,
+      "H20a_N1000": 0.5,
+      "H9p_N1000": 0.75,
+      "H37_N1000": 4.0
+    },
+    "powered": {
+      "H20a": {
+        "500": true,
+        "1000": true
+      },
+      "H9p": {
+        "500": false,
+        "1000": true
+      },
+      "H37": {
+        "500": false,
+        "1000": false
+      }
+    },
+    "rule": {
+      "alpha": 0.016666666666666666,
+      "power": 0.8,
+      "mde_limit_pp": 1.0,
+      "reps": 400,
+      "pairs_per_path": 30,
+      "beta_concentration": 20.0
+    },
+    "n_test_paths": 1000,
+    "moved_out_of_family": [
+      "H37"
+    ],
+    "seen_through": "2026-10-21",
+    "test_code": "src/analysis/path_hypotheses.py"
+  }
 }

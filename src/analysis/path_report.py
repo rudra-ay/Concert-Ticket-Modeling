@@ -68,9 +68,11 @@ def main() -> None:
     w("")
     w("## Summary")
     w("")
-    w(f"- **[P1] Primary face value almost never moves day to day.** Over the {mv['n_snap_days']} snapshot days so far, "
-      f"{mv['pairs_moved']} of {n(mv['pairs_both_priced'])} priced event-day pairs changed min or max face value: "
-      f"{mv['move_rate_pct']}% (95% CI {mv['move_rate_ci95_pct'][0]}–{mv['move_rate_ci95_pct'][1]}%). "
+    w(f"- **[P1] In the panel's first {mv['n_snap_days']} snapshot days, primary face value rarely moved day to day** "
+      f"({mv['n_snap_days'] - 1} day-to-day transitions; {mv['priced_pairs_ranges_pool_pct']}% of priced pairs are "
+      f"ranges-pool events and {mv['priced_pairs_30plus_days_pct']}% are ≥ 30 days out, so this says little about the "
+      f"last weeks before a show). {mv['pairs_moved']} of {n(mv['pairs_both_priced'])} priced event-day pairs changed min "
+      f"or max face value: {mv['move_rate_pct']}% (Wilson 95% CI {mv['move_rate_ci95_pct'][0]}–{mv['move_rate_ci95_pct'][1]}%). "
       f"No event changed its number of price levels ({mv['tiers_changed']} changes). When a change happened it was a step "
       f"(median |Δ| {mv['median_abs_pct_min_change']}% for min, {mv['median_abs_pct_max_change']}% for max). That is consistent with H20 "
       "(tier releases, not drift), but this is descriptive: 2 day-to-day transitions are far too short to test anything.")
@@ -106,7 +108,13 @@ def main() -> None:
     w(f"- **Move rate:** {mv['pairs_moved']} moves in {n(mv['pairs_both_priced'])} priced day-pairs = **{mv['move_rate_pct']}%** "
       f"(Wilson 95% CI {mv['move_rate_ci95_pct'][0]}–{mv['move_rate_ci95_pct'][1]}%). By event: {mv['events_moved']} of "
       f"{n(mv['events_with_2plus_priced_days'])} events with ≥ 2 priced consecutive days moved at least once "
-      f"({mv['event_move_rate_pct']}%, CI {mv['event_move_rate_ci95_pct'][0]}–{mv['event_move_rate_ci95_pct'][1]}%).")
+      f"({mv['event_move_rate_pct']}%, CI {mv['event_move_rate_ci95_pct'][0]}–{mv['event_move_rate_ci95_pct'][1]}%). "
+      "The Wilson CI treats pairs as independent; that is harmless here because no event moved more than "
+      f"{mv['max_moves_per_event']} time. The median move was {mv['median_days_to_show_of_moves']:g} days before the show.")
+    w(f"- **Pair count reconciled:** an earlier draft said {n(mv['pairs_both_priced_incl_started_shows'])} priced pairs. "
+      f"That count kept snapshots taken after the show had started; the panel excludes them (snapshot time ≥ show start, "
+      f"`path_panel.py`), which removes {mv['pairs_excluded_show_started']} pairs and leaves "
+      f"{n(mv['pairs_both_priced'])}, the number the skeptic recomputed. Every rate here uses the panel definition.")
     w(f"- **Direction and size:** {mv['moves_up']} pairs had an upward change and {mv['moves_down']} a downward change "
       "(a pair can have both). Among moves, the median |Δmin| is "
       f"{mv['median_abs_pct_min_change']}% and the median |Δmax| is {mv['median_abs_pct_max_change']}%. These are steps, not small drifts.")
@@ -240,18 +248,23 @@ def main() -> None:
       "pool all selection days. `selection_prob` is the share within that day's pool, and the band mix changed between "
       "cohorts (60% far on 2026-10-19, 30% from 2026-10-22). So the analysis must treat the selection day as an extra "
       "stratum and combine cohort-stratified estimates (FORWARD_COLLECTOR.md). Pooled ESS is a rough guide to "
-      "relative precision only.")
+      "relative precision only. **Caveat for the ranges pool:** there, `selection_prob` is the realized share of a "
+      "deliberate, diversity-capped pick, not a sampling probability. IPW therefore reweights toward the candidate pool's "
+      "band mix and cannot support statements about all US events; the registered IPW sensitivity carries the same "
+      "caveat (below).")
     w("")
     w("## [P4] Literature on PATH (LITERATURE.md §C)")
     w("")
     w("New verified sources: Gallego & van Ryzin (1994), Board & Skrzypacz (2016), Williams (2022), Xu, Fader & "
       "Veeraraghavan (2019), Diehl, Maxcy & Drayer (2015), Waisman (2017 seminar abstract) and Kemper & Breuer (2016), "
-      "each with a verification marker. On top of the existing Sweeting (2012), Leslie & Sorensen (2014), Courty (2003), "
+      "each with a verification marker. **2 of these 7 have unverified findings:** Waisman (only seminar abstracts seen; "
+      "venue and findings UNVERIFIED) and Kemper & Breuer (abstract only; efficiency conclusion UNVERIFIED). Waisman was "
+      "listed twice (items 9 and 31); the entries are merged into item 9. On top of the existing Sweeting (2012), Leslie & Sorensen (2014), Courty (2003), "
       "Bhave & Budish (2023) and CMA (2025) entries, the literature names these predictors of path shape: "
       "**remaining inventory relative to time** (sell-out status), **the timing mix of buyers** (late high-value demand), "
       "**seller type**, **seat tier**, **the primary pricing regime** and **late demand news**. All but the primary regime "
       "need resale data. Two new hypotheses: H36 (resale paths differ by seat tier; excluded until resale data exist) and "
-      "H37 (primary face changes cluster at scheduled sale-phase dates; in the family).")
+      "H37 (primary face changes cluster at scheduled sale-phase dates; descriptive only, see below).")
     w("")
 
     w("## [P5] Path-shape clustering: not supported yet")
@@ -275,8 +288,11 @@ def main() -> None:
 
     w("## Pre-registered PATH hypotheses (BH family, declared 2026-10-21)")
     w("")
-    w("The family is fixed now, before any estimate exists. Every member is **pending** and enters BH at p = 1 until its "
-      "test date. " + fam["common"] + " <!-- notrace: design constants (thresholds, draws, cluster rule) -->")
+    w("The family is fixed now, before any estimate exists, and was revised the same day after skeptic review 4 (F1–F6), "
+      f"still before any estimate. It is {{{', '.join(fam['family'])}}}. Every member is **pending** and enters BH at "
+      "p = 1 until its test date. " + fam["common"] + " <!-- notrace: design constants (thresholds, draws, cluster rule) -->")
+    w("")
+    w(fam["ipw"] + " <!-- notrace: pre-registration text -->")
     w("")
     ft = pd.DataFrame([{"hid": h, "claim": d["claim"], "test": d["test"], "status": "pending (p = 1, q = 1)"}
                        for h, d in fam["definitions"].items()])
@@ -291,7 +307,42 @@ def main() -> None:
       "StubHub/Gametime data or marketplace permissions): " + ", ".join(resale) + ". Others: "
       + "; ".join(f"{k}: {v}" for k, v in other.items()) + ". The full reasons are in `bh_family.json`.")
     w("")
-    w("No out-of-sample claim is made in this report, so there is no final spec and no test-split touch.")
+    pw = j("power.json")
+    mt = pd.DataFrame([{"hid": h, "MDE at N=500 (pp)": pw["mde_pp"][f"{h}_N500"],
+                        "MDE at N=1,000 (pp)": pw["mde_pp"][f"{h}_N1000"],
+                        "powered at 500": pw["powered"][h]["500"], "powered at 1,000": pw["powered"][h]["1000"]}
+                       for h in ("H20a", "H9p", "H37")])
+    w("**Power (F4), registered before any test** (`path_power.py`, `power.json`, `path_spec.json`): simulated, "
+      "artist-clustered minimum detectable effects on the daily move probability, 80% power at α = 0.05/3, from the "
+      f"observed base rate {mv['move_rate_pct']}%. The rule: a test is underpowered if its MDE exceeds 1 pp; the run "
+      "date moves to N ≥ 1,000 unless every member is powered at 500; a member still underpowered at 1,000 leaves the "
+      "family and is reported descriptively. The rule's timing is self-attested: `path_power.py` was not committed "
+      "before `power.json` was produced. <!-- notrace: power rule constants -->")
+    w("")
+    w(md_table(mt))
+    w("")
+    m37, m9 = pw["mde_pp"]["H37_N1000"], pw["mde_pp"]["H9p_N500"]
+    ratio = round(m37 / mv["move_rate_pct"], 1)
+    (TABLES / "power_derived.json").write_text(json.dumps({"h37_mde_n1000_over_base_rate": ratio}, indent=2))
+    w(f"H37's exclusion does not depend on the exact limit: it is underpowered at N = 1,000 for any limit below {m37} pp, "
+      f"about {ratio}x the {mv['move_rate_pct']}% base rate. The 1 pp limit did set the "
+      f"test date (H9p's MDE at N = 500 is {m9} pp), but it moved the date later, not earlier.")
+    w("")
+    w(f"Result: H9p is underpowered at N = 500, so the whole family runs once at N ≥ {n(pw['n_test'])} complete paths. "
+      f"H37 is underpowered even at 1,000 (only {round(100 * pw['inputs']['sale_phase_event_share'], 1)}% of events have "
+      "a sale-phase date inside the 30-day window), so it left the family and is reported as an estimate without a "
+      "BH p-value. H20b is descriptive (F1: its 5% threshold was set after the 0.47% rate was seen). "
+      "<!-- notrace: pre-registration text -->")
+    w("")
+    fs = TABLES / "final_spec.json"
+    if fs.exists():
+        sha = json.loads(fs.read_text())["sha256"]
+        w(f"**Run once (F5).** The spec is frozen in `final_spec.json` (sha256 `{sha[:12]}`): the sha256 of the test code "
+          "(`path_hypotheses.py`), parameters, family, sample rules and MDEs. `path_hypotheses.py --final` refuses to "
+          "run on a hash mismatch, before the path count is reached, or if `test_touch_log.jsonl` already holds a final "
+          "touch (`tests/test_path_final_guard.py`). No test has been run, so no out-of-sample claim is made.")
+    else:
+        w("No out-of-sample claim is made in this report, so there is no final spec and no test-split touch.")
     w("")
     OUT.write_text("\n".join(L) + "\n")
     print(f"wrote {OUT.relative_to(ROOT)} ({len(L)} lines); implemented={implemented} documented={documented}")
