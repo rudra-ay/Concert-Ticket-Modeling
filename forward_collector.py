@@ -73,7 +73,7 @@ MAX_RETRIES = 3
 RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops to this
 DEEP_PAGING_CAP = 1000         # TM: size * page < 1000
 DISCOVER_EVERY_DAYS = 7
-SWEEP_DAYS_MAX = 180           # event dates swept: today .. today + 180 days
+SWEEP_DAYS_MAX = 365           # event dates swept: today .. today + 365 days (tours go on sale ~6-12 months out)
 # The sweep may use the quota up to 5,000 minus the Price Timeline app's 200/day lookup cap minus a margin.
 # TM's Rate-Limit-Available reserve (RESERVE_AVAILABLE) still stops every client first if TM disagrees.
 SWEEP_BUDGET = 4750

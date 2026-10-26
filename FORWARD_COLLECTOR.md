@@ -89,8 +89,8 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
 
 ## Sweep + feed (2026-10-26)
 
-- `sweep`: every upcoming US music event, today to +180 days, via search pages (200 per call, sorted by id; a window
-  over TM's 1,000-result paging cap is split in half). About 200-300 calls/day for ~25-30k events, vs ~4,000 calls for
+- `sweep`: every upcoming US music event, today to +365 days, via search pages (200 per call, sorted by id; a window
+  over TM's 1,000-result paging cap is split in half). About 300-450 calls/day for ~30k+ events, vs ~4,000 calls for
   ~4,000 events per-event. Tables: `sweep_snapshots` (same columns as `snapshots` + `raw_hash`; raw JSON kept only when
   the event changed, or always for watchlist events), `sweep_price_ranges`, `sweep_slices` (finished windows, so a
   rerun resumes), `sweep_last`.
