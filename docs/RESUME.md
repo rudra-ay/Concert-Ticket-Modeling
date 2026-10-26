@@ -1,18 +1,23 @@
-# Resume point (updated 2026-10-22)
+# Resume point (updated 2026-10-26)
 
 ## State
 Research tasks 1-10 are DONE. The final report is reports/findings.md + reports/findings.html (`make report`).
 Everything in it is approved: L1-L23 and P1-P5 (reviews/approved.json).
 
-## Next (only when the user says so)
-The queued app in docs/NEXT_price_forecast_spec.md. Start with Step 0 (CLAUDE.md + PLAN.md), which ends at checkpoint 1.
-Key fact for checkpoint 2: TM primary face value moves on ~0.47% of priced event-days, so a useful
-forecast needs resale data. The Rebrowser StubHub request (REBROWSER_REQUEST.md) is a user action.
+## App
+The Price Timeline app lives in ~/price-timeline (its PLAN.md has the status). Resale data requests
+(TicketData, Rebrowser) are user actions: ~/price-timeline/docs/DATA_REQUESTS.md.
+
+## Collector (2026-10-26, DECISIONS.md item 6)
+`sweep` (every US music show to +365 days, ~450 calls/day), `feed` (Discovery Feed, 1 call), `near` (final-week
+intraday pass), `daily --mode auto` (switches to sweep mode after 2 days pass `sweep-compare`; day 1 passed).
+**User action pending:** install the new schedule from scripts/launchd/ (FORWARD_COLLECTOR.md, "Sweep + feed").
 
 ## Scheduled
 - The PATH confirmatory tests {H20a, H9p} run ONCE at >=1,000 complete priced 30-day paths (~2027-01-02):
   `.venv/bin/python src/analysis/path_hypotheses.py --final` (it refuses earlier or twice).
-- launchd `com.ticketpriceresearch.forward-collector`: daily 09:15, 4,000 events, rolling 24 h budget.
+- launchd `com.ticketpriceresearch.forward-collector`: daily 09:15 (`daily --mode auto` once the new plist is
+  installed), rolling 24 h budget; `com.ticketpriceresearch.feed`: every 4 h, scripts/intraday.sh (feed + near).
   The Mac must be awake. Stop it with: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector`
 
 ## Commands (repo root)
