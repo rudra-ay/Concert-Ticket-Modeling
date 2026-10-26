@@ -885,6 +885,22 @@ def _upsert_candidate(conn: sqlite3.Connection, c: dict[str, Any]) -> None:
         list(c.values()))
 
 
+def sweep_done(conn: sqlite3.Connection, day: date) -> bool:
+    return bool(conn.execute("SELECT 1 FROM runs WHERE command='sweep' AND snap_date=? AND finished_at IS NOT NULL "
+                             "AND remaining_todo=0", (day.isoformat(),)).fetchone())
+
+
+def candidates_from_sweep(conn: sqlite3.Connection, day: date) -> int:
+    """The sweep already saw every upcoming music event today: refresh discover_candidates from it."""
+    cols = ["event_id", "name", "local_date", "event_status", "segment", "genre", "subgenre", "venue_id",
+            "venue_name", "city", "state", "attraction_ids", "has_price_ranges"]
+    rows = conn.execute(f"SELECT {','.join(cols)} FROM sweep_snapshots WHERE snap_date=?", (day.isoformat(),)).fetchall()
+    for r in rows:
+        _upsert_candidate(conn, {**dict(zip(cols, r)), "seen_on": day.isoformat()})
+    conn.commit()
+    return len(rows)
+
+
 def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, days_min: int, days_max: int,
                      max_calls: int, max_pages_per_day: int = 5, page_size: int = 200,
                      country: str = "US") -> int:
@@ -1083,11 +1099,15 @@ def discover(conn: sqlite3.Connection, client: TMClient, clock: Clock, target: i
     today = clock.now().date()
     calls_before = client.budget.spent
     client.planned = max(client.planned, client.calls + max_calls)
-    try:
-        fetch_candidates(conn, client, clock, days_min, days_max, max_calls, max_pages_per_day)
-    except StopForToday as exc:
-        stats.stopped_reason = str(exc)
-        log.warning("discover stopped: %s", exc)
+    if sweep_done(conn, today):
+        n = candidates_from_sweep(conn, today)
+        log.info("discover: %d candidates from today's sweep (no search calls)", n)
+    else:
+        try:
+            fetch_candidates(conn, client, clock, days_min, days_max, max_calls, max_pages_per_day)
+        except StopForToday as exc:
+            stats.stopped_reason = str(exc)
+            log.warning("discover stopped: %s", exc)
     stats.calls_used = client.budget.spent - calls_before
 
     active = conn.execute("SELECT COUNT(*) FROM watchlist WHERE active=1").fetchone()[0]

@@ -98,6 +98,8 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
   (status, hot_event, transactable, sale windows, presales); `feed_changes` = one row per field change with the pull
   time; `feed_runs` (a feed TM hasn't republished is skipped).
 - `sweep-compare [--date]`: parallel check of sweep vs per-event snapshots, with the gate result.
+- `discover` takes candidates from the day's finished sweep (no search calls; up to 700 saved per weekly rescan),
+  falling back to search when no sweep finished that day.
 - `daily --mode auto`: sweep + per-event until 2 days pass the gate, then sweep mode for good (sticky, stored in
   `collector_settings`; delete that row to go back). Gate: >=90% of per-event events found, >=99% identical
   price_min/max and status.

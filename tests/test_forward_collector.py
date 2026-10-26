@@ -877,3 +877,14 @@ def test_gate_fails_on_price_mismatch():
     assert fc.gate_passes({**n, "same_price": 985})
     assert not fc.gate_passes({**n, "both": 800, "close": 800, "same_price": 800, "same_status": 800})
     assert not fc.gate_passes({**n, "close": 50, "same_price": 50, "same_status": 50})  # too few close pairs
+
+
+def test_discover_uses_todays_sweep_instead_of_searching(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=2))
+    client = make_client(conn, clock, t)
+    fc.sweep(conn, client, clock, days_max=10)
+    n = len(t.calls)
+    stats = fc.discover(conn, client, clock, target=20, days_min=1, days_max=10)
+    assert len(t.calls) == n and stats.calls_used == 0  # no search calls
+    assert conn.execute("SELECT COUNT(*) FROM discover_candidates").fetchone()[0] == 11 * 48
+    assert conn.execute("SELECT COUNT(*) FROM watchlist").fetchone()[0] == 20
