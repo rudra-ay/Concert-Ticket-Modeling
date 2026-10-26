@@ -11,6 +11,14 @@ What it does, once per day:
   2. `discover` : search upcoming US music events 1-120 days out and add a diverse sample to the
                   watchlist (spread over states, genres, venues, artists and days-out).
   `daily` = `run`, then `discover` with whatever budget is left if the last discover is >= 7 days old.
+  3. `sweep`    : snapshot EVERY upcoming US music event via search pages (200 events per call, ~200-300
+                  calls/day) into sweep_* tables. Same Discovery event objects as /events/{id}.json (all
+                  top-level fields identical on 28/28 overlapping events, 2026-10-26). Raw JSON is stored
+                  only when an event changed. `daily --mode sweep` sweeps first, copies watchlist events into
+                  `snapshots`, and per-event calls only the watchlist events the sweep missed.
+  4. `feed`     : the Discovery Feed (one call = every US event, ~110k, refreshed by TM several times a day).
+                  No prices, but status, hotEvent, transactable, sale/presale windows. Keeps the latest
+                  state of every music event and a timestamped log of each field change (sell-outs etc.).
 
 Limits (official API, documented: 5 req/s, 5,000 calls/day): token bucket at <= 4 req/s, a persistent
 per-UTC-day call budget (default 4,500), and on 429 we honor Retry-After for at most 3 retries, then
@@ -22,6 +30,9 @@ Usage:
   .venv/bin/python forward_collector.py run [--limit N]
   .venv/bin/python forward_collector.py discover [--target 3000] [--max-calls 700]
   .venv/bin/python forward_collector.py watchlist add <event_id>... | import <csv> | export <csv>
+  .venv/bin/python forward_collector.py sweep [--days-max 180]
+  .venv/bin/python forward_collector.py sweep-compare [--date YYYY-MM-DD]
+  .venv/bin/python forward_collector.py feed
   .venv/bin/python forward_collector.py status
   .venv/bin/python forward_collector.py prune --keep-days 365
 """
@@ -31,6 +42,7 @@ import argparse
 import csv
 import email.utils
 import gzip
+import hashlib
 import json
 import logging
 import os
@@ -61,6 +73,16 @@ MAX_RETRIES = 3
 RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops to this
 DEEP_PAGING_CAP = 1000         # TM: size * page < 1000
 DISCOVER_EVERY_DAYS = 7
+SWEEP_DAYS_MAX = 180           # event dates swept: today .. today + 180 days
+# The sweep may use the quota up to 5,000 minus the Price Timeline app's 200/day lookup cap minus a margin.
+# TM's Rate-Limit-Available reserve (RESERVE_AVAILABLE) still stops every client first if TM disagrees.
+SWEEP_BUDGET = 4750
+SWEEP_SOURCE_URL = f"{API_BASE}/events.json (sweep)"
+# `daily --mode auto` switches to sweep mode for good once GATE_DAYS parallel days each pass these checks.
+GATE_DAYS, GATE_MIN_OVERLAP, GATE_MIN_IDENTICAL = 2, 0.90, 0.99
+FEED_URL = "https://app.ticketmaster.com/discovery-feed/v2/events.json"
+FEED_TRACKED = ("event_status", "hot_event", "transactable", "official_seller", "onsale_start", "onsale_end",
+                "local_date", "start_utc", "presales_n", "in_feed")
 DEACTIVATE_AFTER_404S = 3
 
 EXIT_OK, EXIT_NO_KEY, EXIT_AUTH, EXIT_RATE_LIMITED = 0, 3, 5, 6
@@ -336,8 +358,8 @@ class TMClient:
         self.planned = 0        # calls the current job expects to make; sets the 1% 429 threshold
         self.rate_limited = False
 
-    def _get(self, path: str, params: dict[str, Any]) -> Response:
-        url = API_BASE + path
+    def _get(self, path: str, params: dict[str, Any], base: str = API_BASE) -> Response:
+        url = base + path
         for attempt in range(self.max_retries + 1):
             self.budget.spend()
             self.bucket.acquire()
@@ -389,6 +411,9 @@ class TMClient:
 
     def search_events(self, params: dict[str, Any]) -> Response:
         return self._get("/events.json", params)
+
+    def get_feed(self, country: str = "US") -> Response:
+        return self._get("", {"countryCode": country}, base=FEED_URL)
 
 
 # --------------------------------------------------------------------------- storage
@@ -539,8 +564,49 @@ def connect(db_path: Path) -> sqlite3.Connection:
         for col, typ in cols.items():
             if col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    _sweep_schema(conn)
     conn.commit()
     return conn
+
+
+def _sweep_schema(conn: sqlite3.Connection) -> None:
+    """sweep_snapshots mirrors snapshots' columns (plus raw_hash), so promotion is a plain column copy."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='sweep_snapshots'").fetchone():
+        cols = [f"{r[1]} {r[2]}" for r in conn.execute("PRAGMA table_info(snapshots)")]
+        conn.execute(f"CREATE TABLE sweep_snapshots ({', '.join(cols)}, raw_hash TEXT, "
+                     "PRIMARY KEY (event_id, snap_date))")
+    conn.executescript("""
+CREATE INDEX IF NOT EXISTS sweep_snapshots_by_date ON sweep_snapshots(snap_date);
+CREATE TABLE IF NOT EXISTS sweep_price_ranges (
+    event_id TEXT NOT NULL, snap_date TEXT NOT NULL, idx INTEGER NOT NULL,
+    type TEXT, currency TEXT, min REAL, max REAL,
+    PRIMARY KEY (event_id, snap_date, idx)
+);
+CREATE TABLE IF NOT EXISTS sweep_slices (    -- a finished search window; reruns the same day skip it
+    snap_date TEXT NOT NULL, start_utc TEXT NOT NULL, end_utc TEXT NOT NULL,
+    pages INTEGER NOT NULL, total_elements INTEGER, events INTEGER,
+    PRIMARY KEY (snap_date, start_utc, end_utc)
+);
+CREATE TABLE IF NOT EXISTS sweep_last (      -- hash of each event's last stored raw JSON
+    event_id TEXT PRIMARY KEY, raw_hash TEXT NOT NULL, snap_date TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collector_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, set_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS feed_runs (
+    run_ts TEXT PRIMARY KEY, last_modified TEXT, events INTEGER, music INTEGER,
+    new_events INTEGER, changes INTEGER, skipped INTEGER
+);
+CREATE TABLE IF NOT EXISTS feed_state (       -- latest feed state per music event
+    event_id TEXT PRIMARY KEY, first_seen_ts TEXT NOT NULL, last_seen_ts TEXT NOT NULL,
+    name TEXT, local_date TEXT, start_utc TEXT, venue_id TEXT, venue_name TEXT, city TEXT, state TEXT,
+    attraction_ids TEXT, genre TEXT, subgenre TEXT, event_status TEXT, hot_event INTEGER, transactable INTEGER,
+    official_seller INTEGER, source TEXT, onsale_start TEXT, onsale_end TEXT, presales_n INTEGER, url TEXT,
+    in_feed INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS feed_changes (     -- one row per tracked field change, at feed-pull time
+    event_id TEXT NOT NULL, ts TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT
+);
+CREATE INDEX IF NOT EXISTS feed_changes_by_event ON feed_changes(event_id, ts);
+""")
 
 
 # --------------------------------------------------------------------------- parsing
@@ -774,6 +840,11 @@ def _snapshot_one(conn: sqlite3.Connection, client: TMClient, clock: Clock, even
             stats.missing_price_ranges += 1
             log.info("missing_priceRanges event=%s status=%s days_until=%s",
                      event_id, row["event_status"], row["days_until_show"])
+    _watchlist_after_snapshot(conn, event_id, row)
+    conn.commit()
+
+
+def _watchlist_after_snapshot(conn: sqlite3.Connection, event_id: str, row: dict[str, Any]) -> None:
     conn.execute("UPDATE watchlist SET event_date=COALESCE(?, event_date), not_found_streak=0, "
                  "first_days_out=COALESCE(first_days_out, ?) WHERE event_id=?",
                  (row["local_date"], row["days_until_show"], event_id))
@@ -782,7 +853,6 @@ def _snapshot_one(conn: sqlite3.Connection, client: TMClient, clock: Clock, even
     elif row["days_until_show"] is not None and row["days_until_show"] < 0:
         conn.execute("UPDATE watchlist SET active=0, deactivated_why='show date passed' WHERE event_id=?",
                      (event_id,))
-    conn.commit()
 
 
 # --------------------------------------------------------------------------- discover
@@ -1106,6 +1176,309 @@ def watchlist_export(conn: sqlite3.Connection, path: Path) -> int:
     return len(rows)
 
 
+# --------------------------------------------------------------------------- sweep (all events via search)
+
+
+def _iso_z(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _store_sweep_event(conn: sqlite3.Connection, client: TMClient, ev: dict, snap_date: str, ts: datetime,
+                       keep_raw: set[str], stats: RunStats) -> None:
+    eid = ev.get("id")
+    if not eid:
+        return
+    row, ranges = parse_event(ev, ts)
+    raw = strip_apikey(json.dumps(ev, sort_keys=True, separators=(",", ":")), client.key)
+    h = hashlib.sha1(raw.encode()).hexdigest()
+    last = conn.execute("SELECT raw_hash FROM sweep_last WHERE event_id=?", (eid,)).fetchone()
+    # Raw JSON only when the event changed, or always for watchlist events (they feed `snapshots`).
+    blob = gzip.compress(raw.encode()) if (eid in keep_raw or not last or last[0] != h) else None
+    cols = {"event_id": eid, "snap_date": snap_date, "snapshot_ts": ts.isoformat(), "http_status": 200, **row,
+            "source_url": SWEEP_SOURCE_URL, "raw_json_gz": blob, "raw_hash": h}
+    cur = conn.execute(f"INSERT OR IGNORE INTO sweep_snapshots({','.join(cols)}) VALUES "
+                       f"({','.join('?' * len(cols))})", list(cols.values()))
+    if not cur.rowcount:
+        return  # already swept today (an event can shift between pages)
+    conn.executemany("INSERT OR IGNORE INTO sweep_price_ranges(event_id, snap_date, idx, type, currency, min, max) "
+                     "VALUES (?,?,?,?,?,?,?)",
+                     [(eid, snap_date, r["idx"], r["type"], r["currency"], r["min"], r["max"]) for r in ranges])
+    conn.execute("INSERT INTO sweep_last(event_id, raw_hash, snap_date) VALUES (?,?,?) "
+                 "ON CONFLICT(event_id) DO UPDATE SET raw_hash=excluded.raw_hash, snap_date=excluded.snap_date",
+                 (eid, h, snap_date))
+    stats.snapshots_saved += 1
+    stats.missing_price_ranges += not ranges
+
+
+def sweep(conn: sqlite3.Connection, client: TMClient, clock: Clock, days_max: int = SWEEP_DAYS_MAX,
+          country: str = "US", page_size: int = 200) -> RunStats:
+    """Snapshot every upcoming music event, one UTC day window at a time. A window with more results than
+    TM's deep-paging cap is split in half until it fits. Finished windows are recorded, so a rerun the same
+    day (after a stop or network error) resumes without re-spending calls."""
+    stats = RunStats()
+    run_id = _start_run(conn, "sweep", clock)
+    now = clock.now()
+    snap_date = now.date().isoformat()
+    day0 = datetime.combine(now.date(), datetime.min.time(), timezone.utc)
+    queue = [(day0 + timedelta(days=i), day0 + timedelta(days=i + 1)) for i in range(days_max + 1)]
+    keep_raw = {r[0] for r in conn.execute("SELECT event_id FROM watchlist WHERE active=1")}
+    calls_before = client.budget.spent
+    client.planned = max(client.planned, client.calls + 2 * len(queue))
+    windows = 0
+    try:
+        while queue:
+            a, b = queue.pop(0)
+            if conn.execute("SELECT 1 FROM sweep_slices WHERE snap_date=? AND start_utc=? AND end_utc=?",
+                            (snap_date, _iso_z(a), _iso_z(b))).fetchone():
+                continue
+            page, total, n, ok, split = 0, None, 0, True, False
+            while True:
+                params = {"classificationName": "music", "countryCode": country, "startDateTime": _iso_z(a),
+                          "endDateTime": _iso_z(b), "size": page_size, "page": page, "sort": "id,asc"}
+                try:
+                    resp = client.search_events(params)
+                except TransportError as exc:
+                    stats.errors += 1
+                    log.error("sweep: network error for %s page %d: %s", _iso_z(a), page, exc)
+                    ok = False
+                    break
+                if resp.status != 200:
+                    stats.errors += 1
+                    log.error("sweep: HTTP %d for %s page %d (a rerun today retries it)", resp.status, _iso_z(a), page)
+                    ok = False
+                    break
+                body = resp.json()
+                total = int((body.get("page") or {}).get("totalElements") or 0)
+                if page == 0 and total > DEEP_PAGING_CAP and b - a > timedelta(hours=1):
+                    mid = a + (b - a) / 2
+                    queue[:0] = [(a, mid), (mid, b)]
+                    split = True
+                    break
+                ts = clock.now()
+                for ev in (body.get("_embedded") or {}).get("events") or []:
+                    _store_sweep_event(conn, client, ev, snap_date, ts, keep_raw, stats)
+                    n += 1
+                conn.commit()
+                page += 1
+                if page * page_size >= min(total, DEEP_PAGING_CAP):
+                    break
+            if ok and not split:
+                if total and total > DEEP_PAGING_CAP:
+                    log.warning("sweep: %s holds %d events (> cap %d) even at 1 h; %d not reachable",
+                                _iso_z(a), total, DEEP_PAGING_CAP, total - DEEP_PAGING_CAP)
+                conn.execute("INSERT OR IGNORE INTO sweep_slices VALUES (?,?,?,?,?,?)",
+                             (snap_date, _iso_z(a), _iso_z(b), page, total, n))
+                conn.commit()
+                windows += 1
+    except StopForToday as exc:
+        stats.stopped_reason = str(exc)
+        log.warning("sweep stopped: %s", exc)
+        if isinstance(exc, AuthError):
+            stats.calls_used = client.budget.spent - calls_before
+            _finish_run(conn, run_id, stats, clock)
+            raise
+    stats.remaining_todo = len(queue)
+    stats.calls_used = client.budget.spent - calls_before
+    _finish_run(conn, run_id, stats, clock)
+    log.info("sweep %s done: windows=%d events=%d missing_priceRanges=%d errors=%d calls=%d left=%d%s",
+             snap_date, windows, stats.snapshots_saved, stats.missing_price_ranges, stats.errors,
+             stats.calls_used, stats.remaining_todo, f" stopped={stats.stopped_reason}" if stats.stopped_reason else "")
+    return stats
+
+
+def promote_sweep(conn: sqlite3.Connection, snap_date: str) -> int:
+    """Copy today's swept rows for active watchlist events into `snapshots`/`price_ranges` (skipping events
+    that already have a snapshot today), with the same watchlist bookkeeping as a per-event call."""
+    snap_cols = [r[1] for r in conn.execute("PRAGMA table_info(snapshots)")]
+    ids = [r[0] for r in conn.execute(
+        "SELECT s.event_id FROM sweep_snapshots s JOIN watchlist w ON w.event_id = s.event_id AND w.active = 1 "
+        "WHERE s.snap_date = ? AND s.raw_json_gz IS NOT NULL AND s.event_id NOT IN "
+        "(SELECT event_id FROM snapshots WHERE snap_date = ?)", (snap_date, snap_date))]
+    cl = ",".join(snap_cols)
+    for eid in ids:
+        conn.execute(f"INSERT OR IGNORE INTO snapshots({cl}) SELECT {cl} FROM sweep_snapshots "
+                     "WHERE event_id=? AND snap_date=?", (eid, snap_date))
+        conn.execute("INSERT OR IGNORE INTO price_ranges SELECT * FROM sweep_price_ranges WHERE event_id=? AND snap_date=?",
+                     (eid, snap_date))
+        r = conn.execute("SELECT local_date, days_until_show, event_status FROM snapshots WHERE event_id=? AND snap_date=?",
+                         (eid, snap_date)).fetchone()
+        _watchlist_after_snapshot(conn, eid, {"local_date": r[0], "days_until_show": r[1], "event_status": r[2]})
+    conn.commit()
+    return len(ids)
+
+
+def compare_numbers(conn: sqlite3.Connection, snap_date: str) -> dict[str, int]:
+    """Per-event snapshots vs the sweep, same events, same day (0 and NULL prices both mean 'no price')."""
+    q = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
+    j = """FROM snapshots a JOIN sweep_snapshots b ON a.event_id=b.event_id AND a.snap_date=b.snap_date
+           WHERE a.snap_date=? AND a.http_status=200 AND a.source_url != ?"""
+    same = lambda c: f"COALESCE(NULLIF(a.{c}, 0), -1) = COALESCE(NULLIF(b.{c}, 0), -1)"  # noqa: E731
+    return {
+        "per_event": q("SELECT COUNT(*) FROM snapshots WHERE snap_date=? AND http_status=200 AND source_url != ?",
+                       snap_date, SWEEP_SOURCE_URL),
+        "swept": q("SELECT COUNT(*) FROM sweep_snapshots WHERE snap_date=?", snap_date),
+        "both": q(f"SELECT COUNT(*) {j}", snap_date, SWEEP_SOURCE_URL),
+        "same_price": q(f"SELECT COUNT(*) {j} AND {same('price_min')} AND {same('price_max')}", snap_date, SWEEP_SOURCE_URL),
+        "same_status": q(f"SELECT COUNT(*) {j} AND a.event_status IS b.event_status", snap_date, SWEEP_SOURCE_URL),
+    }
+
+
+def gate_passes(n: dict[str, int]) -> bool:
+    return (n["per_event"] >= 100 and n["both"] >= GATE_MIN_OVERLAP * n["per_event"]
+            and min(n["same_price"], n["same_status"]) >= GATE_MIN_IDENTICAL * n["both"])
+
+
+def daily_mode(conn: sqlite3.Connection, clock: Clock) -> str:
+    """'sweep' once switched (sticky); otherwise switch when the last GATE_DAYS parallel days all pass."""
+    row = conn.execute("SELECT value FROM collector_settings WHERE key='daily_mode'").fetchone()
+    if row:
+        return row[0]
+    days = [r[0] for r in conn.execute(
+        "SELECT DISTINCT snap_date FROM sweep_slices WHERE snap_date < ? ORDER BY snap_date DESC LIMIT ?",
+        (clock.now().date().isoformat(), GATE_DAYS))]
+    results = {d: gate_passes(compare_numbers(conn, d)) for d in days}
+    if len(days) == GATE_DAYS and all(results.values()):
+        conn.execute("INSERT INTO collector_settings VALUES ('daily_mode', 'sweep', ?)", (clock.now().isoformat(),))
+        conn.commit()
+        log.info("daily: sweep passed the parallel check on %s; switching to sweep mode for good", days)
+        return "sweep"
+    log.info("daily: parallel phase (sweep + per-event); gate so far %s", results or "no days yet")
+    return "parallel"
+
+
+def sweep_compare(conn: sqlite3.Connection, snap_date: str) -> str:
+    """Parallel-run check: the sweep vs per-event snapshots of the same events on the same day."""
+    q = lambda sql, *a: conn.execute(sql, a).fetchone()  # noqa: E731
+    per = q("SELECT COUNT(*) FROM snapshots WHERE snap_date=? AND http_status=200 AND source_url != ?",
+            snap_date, SWEEP_SOURCE_URL)[0]
+    swept = q("SELECT COUNT(*) FROM sweep_snapshots WHERE snap_date=?", snap_date)[0]
+    j = """FROM snapshots a JOIN sweep_snapshots b ON a.event_id=b.event_id AND a.snap_date=b.snap_date
+           WHERE a.snap_date=? AND a.http_status=200 AND a.source_url != ?"""
+    both = q(f"SELECT COUNT(*) {j}", snap_date, SWEEP_SOURCE_URL)[0]
+    same = lambda c: f"COALESCE(NULLIF(a.{c}, 0), -1) = COALESCE(NULLIF(b.{c}, 0), -1)"  # 0 and NULL = no price
+    p_same = q(f"SELECT COUNT(*) {j} AND {same('price_min')} AND {same('price_max')}", snap_date, SWEEP_SOURCE_URL)[0]
+    s_same = q(f"SELECT COUNT(*) {j} AND a.event_status IS b.event_status", snap_date, SWEEP_SOURCE_URL)[0]
+    missed = conn.execute(f"""SELECT a.event_id, a.event_status, a.local_date FROM snapshots a WHERE a.snap_date=?
+        AND a.http_status=200 AND a.source_url != ? AND a.event_id NOT IN
+        (SELECT event_id FROM sweep_snapshots WHERE snap_date=?) LIMIT 2000""",
+        (snap_date, SWEEP_SOURCE_URL, snap_date)).fetchall()
+    by_status: dict[str, int] = {}
+    for _, st, _ in missed:
+        by_status[st or "(none)"] = by_status.get(st or "(none)", 0) + 1
+    diffs = conn.execute(f"""SELECT a.event_id, a.price_min, b.price_min, a.event_status, b.event_status,
+        ROUND((julianday(b.snapshot_ts) - julianday(a.snapshot_ts)) * 24, 1) {j}
+        AND NOT ({same('price_min')} AND {same('price_max')} AND a.event_status IS b.event_status) LIMIT 15""",
+        (snap_date, SWEEP_SOURCE_URL)).fetchall()
+    calls = q("SELECT COALESCE(SUM(calls_used),0) FROM runs WHERE snap_date=? AND command='sweep'", snap_date)[0]
+    pct = lambda a, b: f"{100 * a / b:.2f}%" if b else "-"  # noqa: E731
+    out = [f"sweep vs per-event snapshots, {snap_date}  [gate: {'PASS' if gate_passes(compare_numbers(conn, snap_date)) else 'not passed'}]",
+           f"  per-event snapshots: {per:,}   swept events: {swept:,} (sweep calls: {calls:,})",
+           f"  in both: {both:,} ({pct(both, per)} of per-event)   per-event not in sweep: {per - both:,}",
+           f"  identical price_min/max: {p_same:,} ({pct(p_same, both)})   identical status: {s_same:,} ({pct(s_same, both)})"]
+    if by_status:
+        out.append(f"  not-in-sweep by status: {by_status}")
+    if diffs:
+        out.append("  differences (event, per-event min, sweep min, per-event status, sweep status, hours apart):")
+        out += [f"    {d}" for d in diffs]
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- feed (all US events, no prices)
+
+
+def _b(x: Any) -> int | None:
+    return None if x is None else int(bool(x))
+
+
+def parse_feed_event(e: dict) -> dict[str, Any]:
+    v = e.get("venue") or {}
+    atts = [(a.get("attraction") or a) for a in e.get("attractions") or []]
+    return {
+        "event_id": e.get("eventId"), "name": e.get("eventName"), "local_date": e.get("eventStartLocalDate"),
+        "start_utc": e.get("eventStartDateTime"), "venue_id": v.get("venueId"), "venue_name": v.get("venueName"),
+        "city": v.get("venueCity"), "state": v.get("venueStateCode"),
+        "attraction_ids": ",".join(a["attractionId"] for a in atts if a.get("attractionId")) or None,
+        "genre": e.get("classificationGenre"), "subgenre": e.get("classificationSubGenre"),
+        "event_status": e.get("eventStatus"), "hot_event": _b(e.get("hotEvent")),
+        "transactable": _b(e.get("transactable")), "official_seller": _b(e.get("officialSeller")),
+        "source": e.get("source"), "onsale_start": e.get("onsaleStartDateTime"),
+        "onsale_end": e.get("onsaleEndDateTime"), "presales_n": len(e.get("presales") or []),
+        "url": e.get("primaryEventUrl"),
+    }
+
+
+def feed(conn: sqlite3.Connection, client: TMClient, clock: Clock, country: str = "US") -> RunStats:
+    """One call: the whole country's events. Music events update feed_state; tracked-field changes (and events
+    leaving the feed) go to feed_changes. A feed TM hasn't republished since the last pull is not reprocessed."""
+    stats = RunStats()
+    run_id = _start_run(conn, "feed", clock)
+    calls_before = client.budget.spent
+    ts = clock.now().isoformat()
+    try:
+        resp = client.get_feed(country)
+    except (StopForToday, TransportError) as exc:
+        stats.stopped_reason = str(exc)
+        stats.errors += isinstance(exc, TransportError)
+        stats.calls_used = client.budget.spent - calls_before
+        _finish_run(conn, run_id, stats, clock)
+        if isinstance(exc, AuthError):
+            raise
+        log.warning("feed stopped: %s", exc)
+        return stats
+    stats.calls_used = client.budget.spent - calls_before
+    if resp.status != 200:
+        stats.errors += 1
+        log.error("feed: HTTP %d", resp.status)
+        _finish_run(conn, run_id, stats, clock)
+        return stats
+    lm = resp.header("Last-Modified")
+    prev = conn.execute("SELECT last_modified FROM feed_runs WHERE skipped=0 ORDER BY run_ts DESC LIMIT 1").fetchone()
+    if lm and prev and prev[0] == lm:
+        conn.execute("INSERT INTO feed_runs VALUES (?,?,?,?,?,?,1)", (ts, lm, None, None, 0, 0))
+        _finish_run(conn, run_id, stats, clock)
+        log.info("feed: unchanged since last pull (Last-Modified %s); nothing to do", lm)
+        return stats
+    body = resp.body
+    try:
+        body = gzip.decompress(body)
+    except OSError:
+        pass  # already decoded by the transport
+    events = json.loads(body.decode("utf-8")).get("events") or []
+    music = [parse_feed_event(e) for e in events if e.get("classificationSegment") == "Music" and e.get("eventId")]
+    old = {r[0]: r[1:] for r in conn.execute(f"SELECT event_id, {', '.join(FEED_TRACKED)} FROM feed_state")}
+    changes, new = [], 0
+    seen = set()
+    for row in music:
+        eid = row["event_id"]
+        seen.add(eid)
+        cur = {**row, "in_feed": 1}
+        if eid in old:
+            for f, was in zip(FEED_TRACKED, old[eid]):
+                if was != cur[f]:
+                    changes.append((eid, ts, f, None if was is None else str(was), None if cur[f] is None else str(cur[f])))
+        else:
+            new += 1
+    gone = [eid for eid, vals in old.items() if eid not in seen and vals[FEED_TRACKED.index("in_feed")] == 1]
+    changes += [(eid, ts, "in_feed", "1", "0") for eid in gone]
+    cols = [c for c in music[0]] if music else []
+    if music:
+        upd = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "event_id")
+        conn.executemany(
+            f"INSERT INTO feed_state({','.join(cols)}, first_seen_ts, last_seen_ts, in_feed) "
+            f"VALUES ({','.join('?' * len(cols))}, ?, ?, 1) "
+            f"ON CONFLICT(event_id) DO UPDATE SET {upd}, last_seen_ts=excluded.last_seen_ts, in_feed=1",
+            [[r[c] for c in cols] + [ts, ts] for r in music])
+    conn.executemany("UPDATE feed_state SET in_feed=0 WHERE event_id=?", [(g,) for g in gone])
+    conn.executemany("INSERT INTO feed_changes VALUES (?,?,?,?,?)", changes)
+    conn.execute("INSERT INTO feed_runs VALUES (?,?,?,?,?,?,0)", (ts, lm, len(events), len(music), new, len(changes)))
+    stats.snapshots_saved = len(music)
+    stats.added_to_watchlist = 0
+    _finish_run(conn, run_id, stats, clock)
+    log.info("feed %s: %d events, %d music, %d new, %d field changes (%d left the feed)",
+             ts, len(events), len(music), new, len(changes), len(gone))
+    return stats
+
+
 def status(conn: sqlite3.Connection, clock: Clock) -> str:
     today = clock.now().date().isoformat()
     q = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
@@ -1214,11 +1587,20 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--days-max", type=int, default=120)
         sp.add_argument("--far-share", type=float, default=DEFAULT_FAR_SHARE,
                         help="share of new slots for shows >= 60 days out")
+        sp.add_argument("--mode", choices=["detail", "sweep", "auto"], default="detail",
+                        help="daily only: 'sweep' = feed + search sweep, per-event calls only for watchlist events "
+                             "it missed; 'auto' = sweep + per-event in parallel until GATE_DAYS days pass "
+                             "`sweep-compare`, then 'sweep' for good")
     w = sub.add_parser("watchlist")
     wsub = w.add_subparsers(dest="wcmd", required=True)
     wsub.add_parser("add").add_argument("ids", nargs="+")
     wsub.add_parser("import").add_argument("csv", type=Path)
     wsub.add_parser("export").add_argument("csv", type=Path)
+    sw = sub.add_parser("sweep", help="snapshot every upcoming US music event via search pages")
+    sw.add_argument("--days-max", type=int, default=SWEEP_DAYS_MAX)
+    sc = sub.add_parser("sweep-compare", help="parallel-run check: sweep vs per-event snapshots")
+    sc.add_argument("--date", default=None, help="UTC snap date (default today)")
+    sub.add_parser("feed", help="pull the Discovery Feed (all US events, one call) and log field changes")
     sub.add_parser("status")
     sub.add_parser("fill-report", help="priceRanges fill on the candidate pool by days out and genre")
     pr = sub.add_parser("prune", help="delete snapshots older than N days (storage-terms hygiene)")
@@ -1230,7 +1612,7 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
          log_to_file: bool = True) -> int:
     args = build_parser().parse_args(argv)
     clock = clock or SystemClock()
-    needs_key = args.cmd in ("run", "discover", "daily")
+    needs_key = args.cmd in ("run", "discover", "daily", "sweep", "feed")
     key = load_api_key(args.env_file) if needs_key else None
     setup_logging(key, to_file=log_to_file and needs_key)
     if needs_key and not key:
@@ -1243,6 +1625,8 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         import sticky_dns  # noqa: F401
     rate = min(args.rate, DEFAULT_RATE)
     budget_limit = min(args.budget, DAILY_QUOTA)
+    if args.cmd in ("sweep", "feed") or getattr(args, "mode", None) in ("sweep", "auto"):
+        budget_limit = max(budget_limit, SWEEP_BUDGET) if "--budget" not in (argv or sys.argv) else budget_limit
 
     conn = connect(args.db)
     try:
@@ -1257,6 +1641,9 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         if args.cmd == "status":
             print(status(conn, clock))
             return EXIT_OK
+        if args.cmd == "sweep-compare":
+            print(sweep_compare(conn, args.date or clock.now().date().isoformat()))
+            return EXIT_OK
         if args.cmd == "fill-report":
             print(fill_report(conn, clock))
             return EXIT_OK
@@ -1267,7 +1654,21 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         assert key is not None
         client = TMClient(key, transport or RequestsTransport(), clock, CallBudget(conn, clock, budget_limit, args.max_wait_hours * 3600), rate)
         try:
-            if args.cmd in ("run", "daily"):
+            if args.cmd == "sweep":
+                sweep(conn, client, clock, args.days_max)
+            elif args.cmd == "feed":
+                feed(conn, client, clock)
+            elif args.cmd in ("run", "daily"):
+                mode = getattr(args, "mode", "detail")
+                if mode == "auto" and args.cmd == "daily":
+                    mode = daily_mode(conn, clock)
+                if mode in ("sweep", "parallel"):
+                    feed(conn, client, clock)
+                    sw = sweep(conn, client, clock)
+                if mode == "sweep":
+                    n = promote_sweep(conn, clock.now().date().isoformat())
+                    log.info("daily: %d watchlist snapshots from the sweep; per-event calls only for the rest%s",
+                             n, f" (sweep stopped: {sw.stopped_reason})" if sw.stopped_reason else "")
                 stats = run_snapshots(conn, client, clock, getattr(args, "limit", None), command=args.cmd)
                 # Discover every day: only stale (>= 7 days) or new day-slices are searched, so this is
                 # a few calls most days and a full rescan (incl. promotions) once a week.

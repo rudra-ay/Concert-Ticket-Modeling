@@ -673,3 +673,206 @@ def test_prune(conn, clock):
     fc.run_snapshots(conn, client, clock)
     assert fc.prune(conn, 5, clock) == 1
     assert conn.execute("SELECT COUNT(*) FROM price_ranges").fetchone()[0] == 2
+
+
+# ------------------------------------------------------------------ sweep (all events via search pages)
+
+
+def window_responder(per_hour: int, price=lambda eid: 49.5, fail_first: dict | None = None):
+    """Fake search over [startDateTime, endDateTime): per_hour events per hour, ids unique per window start."""
+    template = load("event_with_ranges.json")
+    fail_first = dict(fail_first or {})  # window start -> how many 500s to serve before succeeding
+
+    def respond(params: dict) -> fc.Response:
+        assert params["size"] * (params["page"] + 1) <= fc.DEEP_PAGING_CAP
+        a = datetime.fromisoformat(params["startDateTime"].replace("Z", "+00:00"))
+        b = datetime.fromisoformat(params["endDateTime"].replace("Z", "+00:00"))
+        if fail_first.get(params["startDateTime"], 0) > 0:
+            fail_first[params["startDateTime"]] -= 1
+            return fc.Response(500, {}, b"{}")
+        total = int(per_hour * (b - a).total_seconds() / 3600)
+        size, page = params["size"], params["page"]
+        evs = []
+        for i in range(page * size, min(total, (page + 1) * size)):
+            ev = copy.deepcopy(template)
+            ev["id"] = f"E{a:%Y%m%d%H%M}N{i:04d}"
+            ev["dates"]["start"]["localDate"] = a.date().isoformat()
+            ev["priceRanges"] = [{"type": "standard", "currency": "USD", "min": price(ev["id"]), "max": 99.0}]
+            evs.append(ev)
+        body = {"page": {"size": size, "totalElements": total, "number": page}}
+        if evs:
+            body["_embedded"] = {"events": evs}
+        return fc.Response(200, {"Rate-Limit-Available": "4000"}, json.dumps(body).encode())
+
+    return respond
+
+
+def test_sweep_stores_every_event_and_rerun_spends_nothing(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=10))  # 240/day -> 2 pages per day
+    stats = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=4)
+    assert stats.calls_used == 5 * 2 and stats.snapshots_saved == 5 * 240 and stats.remaining_todo == 0
+    n = len(t.calls)
+    again = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=4)
+    assert len(t.calls) == n and again.snapshots_saved == 0
+    assert conn.execute("SELECT COUNT(*) FROM sweep_price_ranges").fetchone()[0] == 5 * 240
+
+
+def test_sweep_splits_windows_over_the_deep_paging_cap(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=60))  # 1,440/day > 1,000 cap
+    stats = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=0)
+    assert stats.snapshots_saved == 1440  # nothing lost to the cap
+    spans = conn.execute("SELECT start_utc, end_utc FROM sweep_slices").fetchall()
+    assert len(spans) == 2 and spans[0][1] == spans[1][0]  # two 12 h halves
+
+
+def test_sweep_keeps_raw_json_only_when_changed_or_on_watchlist(conn, clock):
+    prices = {}
+    t = FakeTransport(clock, search=window_responder(per_hour=1, price=lambda e: prices.get(e, 49.5)))
+    fc.sweep(conn, make_client(conn, clock, t), clock, days_max=0)
+    ids = [r[0] for r in conn.execute("SELECT event_id FROM sweep_snapshots ORDER BY event_id")]
+    seed(conn, clock, ids[:1])
+    clock.advance_days(1)
+    prices[ids[1]] = 59.5
+    # same events again (the window responder keys ids by window start, so pin the windows to day 0)
+    t.search = window_responder(per_hour=1, price=lambda e: prices.get(e, 49.5))
+    stats = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=1)
+    day1 = clock.now().date().isoformat()
+    raw = dict(conn.execute("SELECT event_id, raw_json_gz IS NOT NULL FROM sweep_snapshots WHERE snap_date=?",
+                            (day1,)).fetchall())
+    assert stats.snapshots_saved > 0
+    assert all(v == 1 for k, v in raw.items() if k not in ids)  # new events: first sighting keeps raw
+
+
+def test_sweep_raw_dropped_for_unchanged_event(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=1))
+    fc.sweep(conn, make_client(conn, clock, t), clock, days_max=0)
+    conn.execute("DELETE FROM sweep_slices")  # pretend a new day for the same window
+    conn.execute("UPDATE sweep_snapshots SET snap_date='2000-01-01'")
+    fc.sweep(conn, make_client(conn, clock, t), clock, days_max=0)
+    today = clock.now().date().isoformat()
+    kept = conn.execute("SELECT SUM(raw_json_gz IS NOT NULL), COUNT(*) FROM sweep_snapshots WHERE snap_date=?",
+                        (today,)).fetchone()
+    assert kept == (0, 24)
+
+
+def test_sweep_failed_window_is_retried_by_rerun(conn, clock):
+    day0 = clock.now().date().isoformat() + "T00:00:00Z"
+    # 4 x 500 outlasts the client's own 3 retries, so the window stays unfinished
+    t = FakeTransport(clock, search=window_responder(per_hour=1, fail_first={day0: fc.MAX_RETRIES + 1}))
+    s1 = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=1)
+    assert s1.errors >= 1 and s1.snapshots_saved == 24
+    s2 = fc.sweep(conn, make_client(conn, clock, t), clock, days_max=1)
+    assert s2.snapshots_saved == 24 and s2.errors == 0
+
+
+def test_daily_sweep_mode_promotes_watchlist_and_calls_only_the_rest(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=1), events={"MISSING1": load("event_with_ranges.json")})
+    client = make_client(conn, clock, t)
+    fc.sweep(conn, client, clock, days_max=0)
+    ids = [r[0] for r in conn.execute("SELECT event_id FROM sweep_snapshots LIMIT 3")]
+    seed(conn, clock, ids + ["MISSING1"])
+    today = clock.now().date().isoformat()
+    assert fc.promote_sweep(conn, today) == 3
+    n = len(t.calls)
+    stats = fc.run_snapshots(conn, client, clock)
+    assert len(t.calls) - n == 1 and stats.snapshots_saved == 1  # only the event the sweep missed
+    got = conn.execute("SELECT COUNT(*), SUM(source_url = ?) FROM snapshots WHERE snap_date=?",
+                       (fc.SWEEP_SOURCE_URL, today)).fetchone()
+    assert got == (4, 3)
+    assert conn.execute("SELECT COUNT(*) FROM price_ranges WHERE snap_date=?", (today,)).fetchone()[0] >= 4
+    report = fc.sweep_compare(conn, today)
+    assert "swept events: 24" in report
+
+
+def test_sweep_compare_counts_matches_and_misses(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=1),
+                      events={"NOT_IN_SWEEP": load("event_with_ranges.json")})
+    client = make_client(conn, clock, t)
+    fc.sweep(conn, client, clock, days_max=0)
+    ids = [r[0] for r in conn.execute("SELECT event_id FROM sweep_snapshots LIMIT 2")]
+    for eid in ids:  # per-event snapshots of swept events (served from the same template)
+        t.events[eid] = dict(load("event_with_ranges.json"), priceRanges=[{"type": "standard", "currency": "USD",
+                                                                            "min": 49.5, "max": 99.0}])
+    seed(conn, clock, ids + ["NOT_IN_SWEEP"])
+    fc.run_snapshots(conn, client, clock)
+    r = fc.sweep_compare(conn, clock.now().date().isoformat())
+    assert "per-event snapshots: 3" in r and "in both: 2" in r and "per-event not in sweep: 1" in r
+    assert "identical price_min/max: 2 (100.00%)" in r
+
+
+# ------------------------------------------------------------------ feed
+
+
+def feed_body(events: list[dict]) -> bytes:
+    return gzip.compress(json.dumps({"events": events}).encode())
+
+
+def feed_event(eid: str, status="onsale", hot=False, segment="Music") -> dict:
+    return {"eventId": eid, "eventName": f"Show {eid}", "classificationSegment": segment, "classificationGenre": "Rock",
+            "eventStatus": status, "hotEvent": hot, "transactable": True, "officialSeller": True, "source": "ticketmaster",
+            "eventStartLocalDate": "2026-12-01", "eventStartDateTime": "2026-12-02T03:00:00Z",
+            "onsaleStartDateTime": "2026-06-01T17:00:00Z", "onsaleEndDateTime": "2026-12-02T03:00:00Z", "presales": [],
+            "venue": {"venueId": "V1", "venueName": "Hall", "venueCity": "Austin", "venueStateCode": "TX"},
+            "attractions": [{"attraction": {"attractionId": "A1"}}], "primaryEventUrl": f"https://tm.example/{eid}"}
+
+
+class FeedTransport(FakeTransport):
+    def __init__(self, clock, bodies: list[tuple[bytes, str]]):
+        super().__init__(clock)
+        self.bodies = bodies
+
+    def get(self, url, params):
+        self.calls.append((self.clock.monotonic(), url, dict(params)))
+        assert url == fc.FEED_URL and params["countryCode"] == "US" and params["apikey"] == KEY
+        body, lm = self.bodies.pop(0)
+        return fc.Response(200, {"Last-Modified": lm, "Content-Type": "application/gzip"}, body)
+
+
+def test_feed_keeps_music_state_and_logs_changes(conn, clock):
+    t = FeedTransport(clock, [
+        (feed_body([feed_event("E1"), feed_event("E2"), feed_event("S1", segment="Sports")]), "Mon, 26 Oct 2026 10:00:00 GMT"),
+        (feed_body([feed_event("E1", status="offsale", hot=True), feed_event("E3")]), "Mon, 26 Oct 2026 14:00:00 GMT"),
+        (feed_body([]), "Mon, 26 Oct 2026 14:00:00 GMT"),  # not republished: skipped
+    ])
+    client = make_client(conn, clock, t)
+    s1 = fc.feed(conn, client, clock)
+    assert s1.calls_used == 1 and s1.snapshots_saved == 2  # sports event ignored
+    clock.sleep(4 * 3600)
+    fc.feed(conn, client, clock)
+    ch = {(r[0], r[1]): (r[2], r[3]) for r in conn.execute("SELECT event_id, field, old, new FROM feed_changes")}
+    assert ch[("E1", "event_status")] == ("onsale", "offsale") and ch[("E1", "hot_event")] == ("0", "1")
+    assert ch[("E2", "in_feed")] == ("1", "0") and ("E3", "in_feed") not in ch
+    st = dict(conn.execute("SELECT event_id, in_feed FROM feed_state").fetchall())
+    assert st == {"E1": 1, "E2": 0, "E3": 1}
+    clock.sleep(3600)
+    s3 = fc.feed(conn, client, clock)
+    assert s3.calls_used == 1 and conn.execute("SELECT COUNT(*) FROM feed_changes").fetchone()[0] == len(ch)
+    assert conn.execute("SELECT skipped FROM feed_runs ORDER BY run_ts DESC LIMIT 1").fetchone()[0] == 1
+
+
+def test_auto_mode_switches_only_after_two_passing_parallel_days(conn, clock):
+    t = FakeTransport(clock, search=window_responder(per_hour=10))
+    client = make_client(conn, clock, t)
+    assert fc.daily_mode(conn, clock) == "parallel"  # no evidence yet
+    for _ in range(2):
+        fc.sweep(conn, client, clock, days_max=0)
+        ids = [r[0] for r in conn.execute("SELECT event_id FROM sweep_snapshots WHERE snap_date=?",
+                                          (clock.now().date().isoformat(),))]
+        for eid in ids:
+            t.events[eid] = dict(load("event_with_ranges.json"), priceRanges=[
+                {"type": "standard", "currency": "USD", "min": 49.5, "max": 99.0}])
+        conn.execute("UPDATE watchlist SET active=0")  # the fake's ids change daily; track today's only
+        seed(conn, clock, ids)
+        fc.run_snapshots(conn, client, clock)
+        assert fc.gate_passes(fc.compare_numbers(conn, clock.now().date().isoformat()))
+        clock.advance_days(1)
+    assert fc.daily_mode(conn, clock) == "sweep"
+    conn.execute("DELETE FROM sweep_slices")  # sticky: no longer re-evaluated
+    assert fc.daily_mode(conn, clock) == "sweep"
+
+
+def test_gate_fails_on_price_mismatch():
+    n = {"per_event": 1000, "swept": 20000, "both": 990, "same_price": 970, "same_status": 990}
+    assert not fc.gate_passes(n)
+    assert fc.gate_passes({**n, "same_price": 985})
+    assert not fc.gate_passes({**n, "both": 800, "same_price": 800, "same_status": 800})

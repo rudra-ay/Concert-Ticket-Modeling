@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd template for forward_collector.py (see FORWARD_COLLECTOR.md, "Install the schedule").
+  /Users/rudraayyagari/Ticket-price-corr-research is replaced with the project root at install time. Pulls the Discovery Feed every 4 hours (1 API call each);
+  if the Mac is asleep then, launchd runs it at the next wake. The API key is read from /Users/rudraayyagari/Ticket-price-corr-research/.env
+  by the script itself; never put it in this file.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ticketpriceresearch.feed</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rudraayyagari/Ticket-price-corr-research/.venv/bin/python</string>
+        <string>/Users/rudraayyagari/Ticket-price-corr-research/forward_collector.py</string>
+        <string>feed</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research</string>
+    <key>StartInterval</key>
+    <integer>14400</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research/data/forward/logs/launchd-feed.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research/data/forward/logs/launchd-feed.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>

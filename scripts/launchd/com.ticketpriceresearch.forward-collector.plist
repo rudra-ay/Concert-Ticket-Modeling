@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd template for forward_collector.py (see FORWARD_COLLECTOR.md, "Install the schedule").
+  /Users/rudraayyagari/Ticket-price-corr-research is replaced with the project root at install time. Runs once a day at 09:15 local time;
+  if the Mac is asleep then, launchd runs it at the next wake. The API key is read from /Users/rudraayyagari/Ticket-price-corr-research/.env
+  by the script itself; never put it in this file.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ticketpriceresearch.forward-collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rudraayyagari/Ticket-price-corr-research/.venv/bin/python</string>
+        <string>/Users/rudraayyagari/Ticket-price-corr-research/forward_collector.py</string>
+        <string>daily</string>
+        <string>--mode</string>
+        <string>auto</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research/data/forward/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rudraayyagari/Ticket-price-corr-research/data/forward/logs/launchd.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>

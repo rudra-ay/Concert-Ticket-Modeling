@@ -87,6 +87,26 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
 - Snapshot order is nearest-show-first, so **short-horizon paths (7- and 14-day) are protected** and far events lose that day. 60-day paths tolerate up to 6 missed days (the 10% rule).
 - Manual catch-up runs late in the day cause the same overlap, so avoid them unless the scheduled run failed.
 
+## Sweep + feed (2026-10-26)
+
+- `sweep`: every upcoming US music event, today to +180 days, via search pages (200 per call, sorted by id; a window
+  over TM's 1,000-result paging cap is split in half). About 200-300 calls/day for ~25-30k events, vs ~4,000 calls for
+  ~4,000 events per-event. Tables: `sweep_snapshots` (same columns as `snapshots` + `raw_hash`; raw JSON kept only when
+  the event changed, or always for watchlist events), `sweep_price_ranges`, `sweep_slices` (finished windows, so a
+  rerun resumes), `sweep_last`.
+- `feed`: the Discovery Feed, one call for every US event (no prices). `feed_state` = latest per music event
+  (status, hot_event, transactable, sale windows, presales); `feed_changes` = one row per field change with the pull
+  time; `feed_runs` (a feed TM hasn't republished is skipped).
+- `sweep-compare [--date]`: parallel check of sweep vs per-event snapshots, with the gate result.
+- `daily --mode auto`: sweep + per-event until 2 days pass the gate, then sweep mode for good (sticky, stored in
+  `collector_settings`; delete that row to go back). Gate: >=90% of per-event events found, >=99% identical
+  price_min/max and status.
+- Budget: sweep and feed may use up to 4,750 calls per rolling 24 h (quota 5,000 minus the Price Timeline app's
+  200/day lookup cap and a margin); TM's `Rate-Limit-Available` reserve still stops every client first.
+- Schedule templates: `scripts/launchd/` (daily with `--mode auto`; feed every 4 h). Install:
+  `cp scripts/launchd/*.plist ~/Library/LaunchAgents/` then
+  `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector; for f in forward-collector feed; do launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.$f.plist; done`
+
 ## 1. Add the key (user action)
 
 1. Register for free at https://developer.ticketmaster.com/ and create an app. Copy its **Consumer Key**.
