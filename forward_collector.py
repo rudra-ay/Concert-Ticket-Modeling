@@ -80,6 +80,7 @@ SWEEP_BUDGET = 4750
 SWEEP_SOURCE_URL = f"{API_BASE}/events.json (sweep)"
 # `daily --mode auto` switches to sweep mode for good once GATE_DAYS parallel days each pass these checks.
 GATE_DAYS, GATE_MIN_OVERLAP, GATE_MIN_IDENTICAL = 2, 0.90, 0.99
+GATE_MAX_HOURS_APART = 6  # identity is judged only on pairs snapped this close (prices really change over a day)
 FEED_URL = "https://app.ticketmaster.com/discovery-feed/v2/events.json"
 FEED_TRACKED = ("event_status", "hot_event", "transactable", "official_seller", "onsale_start", "onsale_end",
                 "local_date", "start_utc", "presales_n", "in_feed")
@@ -1312,20 +1313,22 @@ def compare_numbers(conn: sqlite3.Connection, snap_date: str) -> dict[str, int]:
     q = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
     j = """FROM snapshots a JOIN sweep_snapshots b ON a.event_id=b.event_id AND a.snap_date=b.snap_date
            WHERE a.snap_date=? AND a.http_status=200 AND a.source_url != ?"""
+    close = f"{j} AND ABS(julianday(a.snapshot_ts) - julianday(b.snapshot_ts)) * 24 <= {GATE_MAX_HOURS_APART}"
     same = lambda c: f"COALESCE(NULLIF(a.{c}, 0), -1) = COALESCE(NULLIF(b.{c}, 0), -1)"  # noqa: E731
     return {
         "per_event": q("SELECT COUNT(*) FROM snapshots WHERE snap_date=? AND http_status=200 AND source_url != ?",
                        snap_date, SWEEP_SOURCE_URL),
         "swept": q("SELECT COUNT(*) FROM sweep_snapshots WHERE snap_date=?", snap_date),
         "both": q(f"SELECT COUNT(*) {j}", snap_date, SWEEP_SOURCE_URL),
-        "same_price": q(f"SELECT COUNT(*) {j} AND {same('price_min')} AND {same('price_max')}", snap_date, SWEEP_SOURCE_URL),
-        "same_status": q(f"SELECT COUNT(*) {j} AND a.event_status IS b.event_status", snap_date, SWEEP_SOURCE_URL),
+        "close": q(f"SELECT COUNT(*) {close}", snap_date, SWEEP_SOURCE_URL),
+        "same_price": q(f"SELECT COUNT(*) {close} AND {same('price_min')} AND {same('price_max')}", snap_date, SWEEP_SOURCE_URL),
+        "same_status": q(f"SELECT COUNT(*) {close} AND a.event_status IS b.event_status", snap_date, SWEEP_SOURCE_URL),
     }
 
 
 def gate_passes(n: dict[str, int]) -> bool:
-    return (n["per_event"] >= 100 and n["both"] >= GATE_MIN_OVERLAP * n["per_event"]
-            and min(n["same_price"], n["same_status"]) >= GATE_MIN_IDENTICAL * n["both"])
+    return (n["per_event"] >= 100 and n["both"] >= GATE_MIN_OVERLAP * n["per_event"] and n["close"] >= 100
+            and min(n["same_price"], n["same_status"]) >= GATE_MIN_IDENTICAL * n["close"])
 
 
 def daily_mode(conn: sqlite3.Connection, clock: Clock) -> str:
@@ -1371,7 +1374,10 @@ def sweep_compare(conn: sqlite3.Connection, snap_date: str) -> str:
         (snap_date, SWEEP_SOURCE_URL)).fetchall()
     calls = q("SELECT COALESCE(SUM(calls_used),0) FROM runs WHERE snap_date=? AND command='sweep'", snap_date)[0]
     pct = lambda a, b: f"{100 * a / b:.2f}%" if b else "-"  # noqa: E731
-    out = [f"sweep vs per-event snapshots, {snap_date}  [gate: {'PASS' if gate_passes(compare_numbers(conn, snap_date)) else 'not passed'}]",
+    g = compare_numbers(conn, snap_date)
+    out = [f"sweep vs per-event snapshots, {snap_date}  [gate: {'PASS' if gate_passes(g) else 'not passed'}; "
+           f"within {GATE_MAX_HOURS_APART} h: {g['close']:,} pairs, identical price {pct(g['same_price'], g['close'])}, "
+           f"status {pct(g['same_status'], g['close'])}]",
            f"  per-event snapshots: {per:,}   swept events: {swept:,} (sweep calls: {calls:,})",
            f"  in both: {both:,} ({pct(both, per)} of per-event)   per-event not in sweep: {per - both:,}",
            f"  identical price_min/max: {p_same:,} ({pct(p_same, both)})   identical status: {s_same:,} ({pct(s_same, both)})"]

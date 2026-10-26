@@ -872,7 +872,8 @@ def test_auto_mode_switches_only_after_two_passing_parallel_days(conn, clock):
 
 
 def test_gate_fails_on_price_mismatch():
-    n = {"per_event": 1000, "swept": 20000, "both": 990, "same_price": 970, "same_status": 990}
+    n = {"per_event": 1000, "swept": 20000, "both": 990, "close": 990, "same_price": 970, "same_status": 990}
     assert not fc.gate_passes(n)
     assert fc.gate_passes({**n, "same_price": 985})
-    assert not fc.gate_passes({**n, "both": 800, "same_price": 800, "same_status": 800})
+    assert not fc.gate_passes({**n, "both": 800, "close": 800, "same_price": 800, "same_status": 800})
+    assert not fc.gate_passes({**n, "close": 50, "same_price": 50, "same_status": 50})  # too few close pairs
