@@ -16,6 +16,8 @@ What it does, once per day:
                   top-level fields identical on 28/28 overlapping events, 2026-10-26). Raw JSON is stored
                   only when an event changed. `daily --mode sweep` sweeps first, copies watchlist events into
                   `snapshots`, and per-event calls only the watchlist events the sweep missed.
+  5. `near`     : intraday re-sweep of shows in their final NEAR_DAYS days (where face moves concentrate), a few
+                  calls per pass; compact rows in near_snapshots (price and status at each pass).
   4. `feed`     : the Discovery Feed (one call = every US event, ~110k, refreshed by TM several times a day).
                   No prices, but status, hotEvent, transactable, sale/presale windows. Keeps the latest
                   state of every music event and a timestamped log of each field change (sell-outs etc.).
@@ -33,6 +35,7 @@ Usage:
   .venv/bin/python forward_collector.py sweep [--days-max 180]
   .venv/bin/python forward_collector.py sweep-compare [--date YYYY-MM-DD]
   .venv/bin/python forward_collector.py feed
+  .venv/bin/python forward_collector.py near
   .venv/bin/python forward_collector.py status
   .venv/bin/python forward_collector.py prune --keep-days 365
 """
@@ -81,6 +84,7 @@ SWEEP_SOURCE_URL = f"{API_BASE}/events.json (sweep)"
 # `daily --mode auto` switches to sweep mode for good once GATE_DAYS parallel days each pass these checks.
 GATE_DAYS, GATE_MIN_OVERLAP, GATE_MIN_IDENTICAL = 2, 0.90, 0.99
 GATE_MAX_HOURS_APART = 6  # identity is judged only on pairs snapped this close (prices really change over a day)
+NEAR_DAYS = 7                  # `near` re-sweeps event dates today .. today + 7 days
 FEED_URL = "https://app.ticketmaster.com/discovery-feed/v2/events.json"
 FEED_TRACKED = ("event_status", "hot_event", "transactable", "official_seller", "onsale_start", "onsale_end",
                 "local_date", "start_utc", "presales_n", "in_feed")
@@ -592,6 +596,11 @@ CREATE TABLE IF NOT EXISTS sweep_last (      -- hash of each event's last stored
     event_id TEXT PRIMARY KEY, raw_hash TEXT NOT NULL, snap_date TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS collector_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, set_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS near_snapshots (   -- final-week shows, every `near` pass
+    event_id TEXT NOT NULL, snapshot_ts TEXT NOT NULL, local_date TEXT, event_status TEXT,
+    price_min REAL, price_max REAL, has_price_ranges INTEGER,
+    PRIMARY KEY (event_id, snapshot_ts)
+);
 CREATE TABLE IF NOT EXISTS feed_runs (
     run_ts TEXT PRIMARY KEY, last_modified TEXT, events INTEGER, music INTEGER,
     new_events INTEGER, changes INTEGER, skipped INTEGER
@@ -1307,6 +1316,68 @@ def sweep(conn: sqlite3.Connection, client: TMClient, clock: Clock, days_max: in
     return stats
 
 
+def near(conn: sqlite3.Connection, client: TMClient, clock: Clock, days: int = NEAR_DAYS, country: str = "US",
+         page_size: int = 200) -> RunStats:
+    """One intraday pass over shows dated today .. today+days. Not resumable by design: each pass is its own
+    observation time; a window that fails is just missing from this pass."""
+    stats = RunStats()
+    run_id = _start_run(conn, "near", clock)
+    calls_before = client.budget.spent
+    now = clock.now()
+    day0 = datetime.combine(now.date(), datetime.min.time(), timezone.utc)
+    queue = [(day0 + timedelta(days=i), day0 + timedelta(days=i + 1)) for i in range(days + 1)]
+    client.planned = max(client.planned, client.calls + 2 * len(queue))
+    try:
+        while queue:
+            a, b = queue.pop(0)
+            page = 0
+            while True:
+                try:
+                    resp = client.search_events({"classificationName": "music", "countryCode": country,
+                                                 "startDateTime": _iso_z(a), "endDateTime": _iso_z(b),
+                                                 "size": page_size, "page": page, "sort": "id,asc"})
+                except TransportError as exc:
+                    stats.errors += 1
+                    log.error("near: network error for %s: %s", _iso_z(a), exc)
+                    break
+                if resp.status != 200:
+                    stats.errors += 1
+                    log.error("near: HTTP %d for %s page %d", resp.status, _iso_z(a), page)
+                    break
+                body = resp.json()
+                total = int((body.get("page") or {}).get("totalElements") or 0)
+                if page == 0 and total > DEEP_PAGING_CAP and b - a > timedelta(hours=1):
+                    mid = a + (b - a) / 2
+                    queue[:0] = [(a, mid), (mid, b)]
+                    break
+                ts = clock.now()
+                rows = []
+                for ev in (body.get("_embedded") or {}).get("events") or []:
+                    if not ev.get("id"):
+                        continue
+                    row, ranges = parse_event(ev, ts)
+                    rows.append((ev["id"], ts.isoformat(), row["local_date"], row["event_status"], row["price_min"],
+                                 row["price_max"], int(bool(ranges))))
+                conn.executemany("INSERT OR IGNORE INTO near_snapshots VALUES (?,?,?,?,?,?,?)", rows)
+                conn.commit()
+                stats.snapshots_saved += len(rows)
+                page += 1
+                if page * page_size >= min(total, DEEP_PAGING_CAP):
+                    break
+    except StopForToday as exc:
+        stats.stopped_reason = str(exc)
+        log.warning("near stopped: %s", exc)
+        if isinstance(exc, AuthError):
+            stats.calls_used = client.budget.spent - calls_before
+            _finish_run(conn, run_id, stats, clock)
+            raise
+    stats.calls_used = client.budget.spent - calls_before
+    _finish_run(conn, run_id, stats, clock)
+    log.info("near pass %s: %d shows, calls=%d errors=%d", now.isoformat(timespec="minutes"),
+             stats.snapshots_saved, stats.calls_used, stats.errors)
+    return stats
+
+
 def promote_sweep(conn: sqlite3.Connection, snap_date: str) -> int:
     """Copy today's swept rows for active watchlist events into `snapshots`/`price_ranges` (skipping events
     that already have a snapshot today), with the same watchlist bookkeeping as a per-event call."""
@@ -1627,6 +1698,7 @@ def build_parser() -> argparse.ArgumentParser:
     sc = sub.add_parser("sweep-compare", help="parallel-run check: sweep vs per-event snapshots")
     sc.add_argument("--date", default=None, help="UTC snap date (default today)")
     sub.add_parser("feed", help="pull the Discovery Feed (all US events, one call) and log field changes")
+    sub.add_parser("near", help="intraday pass over shows in their final week (price + status)")
     sub.add_parser("status")
     sub.add_parser("fill-report", help="priceRanges fill on the candidate pool by days out and genre")
     pr = sub.add_parser("prune", help="delete snapshots older than N days (storage-terms hygiene)")
@@ -1638,7 +1710,7 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
          log_to_file: bool = True) -> int:
     args = build_parser().parse_args(argv)
     clock = clock or SystemClock()
-    needs_key = args.cmd in ("run", "discover", "daily", "sweep", "feed")
+    needs_key = args.cmd in ("run", "discover", "daily", "sweep", "feed", "near")
     key = load_api_key(args.env_file) if needs_key else None
     setup_logging(key, to_file=log_to_file and needs_key)
     if needs_key and not key:
@@ -1651,7 +1723,7 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
         import sticky_dns  # noqa: F401
     rate = min(args.rate, DEFAULT_RATE)
     budget_limit = min(args.budget, DAILY_QUOTA)
-    if args.cmd in ("sweep", "feed") or getattr(args, "mode", None) in ("sweep", "auto"):
+    if args.cmd in ("sweep", "feed", "near") or getattr(args, "mode", None) in ("sweep", "auto"):
         budget_limit = max(budget_limit, SWEEP_BUDGET) if "--budget" not in (argv or sys.argv) else budget_limit
 
     conn = connect(args.db)
@@ -1684,6 +1756,8 @@ def main(argv: list[str] | None = None, transport: Transport | None = None, cloc
                 sweep(conn, client, clock, args.days_max)
             elif args.cmd == "feed":
                 feed(conn, client, clock)
+            elif args.cmd == "near":
+                near(conn, client, clock)
             elif args.cmd in ("run", "daily"):
                 mode = getattr(args, "mode", "detail")
                 if mode == "auto" and args.cmd == "daily":

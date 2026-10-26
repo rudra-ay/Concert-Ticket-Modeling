@@ -888,3 +888,17 @@ def test_discover_uses_todays_sweep_instead_of_searching(conn, clock):
     assert len(t.calls) == n and stats.calls_used == 0  # no search calls
     assert conn.execute("SELECT COUNT(*) FROM discover_candidates").fetchone()[0] == 11 * 48
     assert conn.execute("SELECT COUNT(*) FROM watchlist").fetchone()[0] == 20
+
+
+def test_near_pass_records_each_pass_separately(conn, clock):
+    prices = {}
+    t = FakeTransport(clock, search=window_responder(per_hour=1, price=lambda e: prices.get(e, 49.5)))
+    client = make_client(conn, clock, t)
+    s1 = fc.near(conn, client, clock, days=2)
+    assert s1.snapshots_saved == 3 * 24 and s1.calls_used == 3
+    clock.sleep(4 * 3600)
+    eid = conn.execute("SELECT event_id FROM near_snapshots LIMIT 1").fetchone()[0]
+    prices[eid] = 59.5
+    fc.near(conn, client, clock, days=2)
+    rows = conn.execute("SELECT price_min FROM near_snapshots WHERE event_id=? ORDER BY snapshot_ts", (eid,)).fetchall()
+    assert [r[0] for r in rows] == [49.5, 59.5]  # two passes, the intraday move is visible

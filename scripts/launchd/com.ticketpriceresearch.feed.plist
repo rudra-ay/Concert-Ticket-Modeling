@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   launchd template for forward_collector.py (see FORWARD_COLLECTOR.md, "Install the schedule").
-  /Users/rudraayyagari/Ticket-price-corr-research is replaced with the project root at install time. Pulls the Discovery Feed every 4 hours (1 API call each);
+  /Users/rudraayyagari/Ticket-price-corr-research is replaced with the project root at install time. Every 4 hours: Discovery Feed (1 call) + final-week price pass (~20-30 calls);
   if the Mac is asleep then, launchd runs it at the next wake. The API key is read from /Users/rudraayyagari/Ticket-price-corr-research/.env
   by the script itself; never put it in this file.
 -->
@@ -12,9 +12,8 @@
     <string>com.ticketpriceresearch.feed</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/rudraayyagari/Ticket-price-corr-research/.venv/bin/python</string>
-        <string>/Users/rudraayyagari/Ticket-price-corr-research/forward_collector.py</string>
-        <string>feed</string>
+        <string>/bin/sh</string>
+        <string>/Users/rudraayyagari/Ticket-price-corr-research/scripts/intraday.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/rudraayyagari/Ticket-price-corr-research</string>

@@ -105,7 +105,8 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
   price_min/max and status.
 - Budget: sweep and feed may use up to 4,750 calls per rolling 24 h (quota 5,000 minus the Price Timeline app's
   200/day lookup cap and a margin); TM's `Rate-Limit-Available` reserve still stops every client first.
-- Schedule templates: `scripts/launchd/` (daily with `--mode auto`; feed every 4 h). Install:
+- `near`: intraday pass over shows dated today..+7 days (~20-30 calls), rows in `near_snapshots` (price, status per pass).
+- Schedule templates: `scripts/launchd/` (daily with `--mode auto`; every 4 h `scripts/intraday.sh` = feed + near). Install:
   `cp scripts/launchd/*.plist ~/Library/LaunchAgents/` then
   `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector; for f in forward-collector feed; do launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.$f.plist; done`
 
