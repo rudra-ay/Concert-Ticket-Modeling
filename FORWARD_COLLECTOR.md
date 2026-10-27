@@ -114,6 +114,11 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
   per-event pass stopped with 2,405 watchlist events unsnapshotted. `promote_sweep(conn, "2026-10-26")` copied
   them from that day's sweep (day 1 of the parallel check: 99.68% identical prices on 1,257 close pairs), so
   2026-10-26 has 3,989 snapshots; rows from the sweep carry source_url ".../events.json (sweep)".
+- 2026-10-27: manual sweep at 16:56 UTC (457 calls, 31,304 shows) while the old `daily` (detail) pass ran; the
+  two shared TM's 5/s limit, so 6 calls got a 429 and waited 2 s. Day 2 of the gate (partial, 2,148 close pairs):
+  PASS, 99.91% identical prices, 100% status. Both gate days pass, but the installed plist runs `daily` without
+  `--mode auto`, so nothing switches until the new plists are installed. Install them after the day's pass ends
+  (`launchctl bootout` stops a running pass).
 
 ## 1. Add the key (user action)
 
