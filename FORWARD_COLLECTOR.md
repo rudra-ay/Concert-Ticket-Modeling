@@ -110,6 +110,11 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
   `cp scripts/launchd/*.plist ~/Library/LaunchAgents/` then
   `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector; for f in forward-collector feed; do launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.$f.plist; done`
 
+- 2026-10-26 backfill: manual sweep/feed/near runs that day used ~740 calls of the rolling budget, and the
+  per-event pass stopped with 2,405 watchlist events unsnapshotted. `promote_sweep(conn, "2026-10-26")` copied
+  them from that day's sweep (day 1 of the parallel check: 99.68% identical prices on 1,257 close pairs), so
+  2026-10-26 has 3,989 snapshots; rows from the sweep carry source_url ".../events.json (sweep)".
+
 ## 1. Add the key (user action)
 
 1. Register for free at https://developer.ticketmaster.com/ and create an app. Copy its **Consumer Key**.
