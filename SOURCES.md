@@ -28,7 +28,7 @@ Evidence cache: robots.txt files are in `data/raw/_scout/robots/`, terms pages i
 | A12 | Federal Reserve G.5/H.10 foreign exchange rates | Bulk file + flat files | FX check of non-US grosses (units per USD, monthly) | No | **ALLOWED** (added 2026-10-19) |
 | A13 | ECB euro foreign exchange reference rates | Bulk file | FX for currencies the Fed lacks (1999 on) | No | **ALLOWED** (added 2026-10-19; cite ECB, state modifications; collected, not required for the $=USD test) |
 | N1 | StubHub | Web (no public API) | **PATH** (resale listings) | n/a | **NEEDS PERMISSION** |
-| N2 | SeatGeek (API + web) | API / web | PATH, LEVEL | client_id | **NEEDS PERMISSION** (blocked us) |
+| N2 | SeatGeek (API + web) | API / web | PATH, LEVEL | client_id | **NEEDS PERMISSION** (web blocked us; free key has no prices) |
 | N3 | Vivid Seats | Web | PATH | n/a | **NEEDS PERMISSION** |
 | N4 | Gametime | Web | PATH (last-minute) | n/a | **NEEDS PERMISSION** |
 | N5 | TicketData.com | Web | **PATH** (historical get-in prices) | n/a | **NEEDS PERMISSION** (blocked us) |
@@ -256,7 +256,12 @@ Several official API hosts serve a robots.txt that disallows everything, or disa
 - **URL:** https://api.seatgeek.com/2 ; developer portal https://developer.seatgeek.com (a JS SPA that showed only "Loading" to our fetcher); API terms https://seatgeek.ca/api-terms
 - **Would give:** event-level `stats` (lowest, average, highest, median price, listing count). Partner access would add listings. Daily `stats` snapshots would be a strong PATH proxy.
 - **What happened:** `seatgeek.com/robots.txt` returned **403 with a DataDome CAPTCHA page**, and `seatgeek.ca/api-terms` returned **403**. Per the rules I stopped. `api.seatgeek.com/robots.txt` is `Disallow: /`. I couldn't confirm whether new developers can still get a `client_id` or what the current API terms say. A third-party claim of 1,000 requests/hour is unverified.
-- **Verdict:** NEEDS PERMISSION.
+- **2026-11-06 update:** the user registered a free developer app and got a `client_id`. Two test calls to
+  `api.seatgeek.com/2/events` (100 req/min limit in the headers) returned US concerts with full metadata, but
+  `stats` was **empty on every event**, including the week's 100 most popular concerts. Prices appear to be
+  partner-only now. `support.seatgeek.com` also returned 403, so the API terms are still unread in full (search
+  snippets: free and commercial apps allowed, logo attribution, no redistribution).
+- **Verdict:** NEEDS PERMISSION (partner access for `stats`). The free key gives no prices.
 
 ### N3. Vivid Seats
 - **Terms:** https://www.vividseats.com/terms (Global Terms, Effective July 22, 2026; cached `terms/vividseats_terms.html`). §17.3.3: you may not "crawl, scrape, or otherwise harvest data or information from any part of the Vivid Seats Marketplace (including the Website) other than as permitted under these Terms of Use".
