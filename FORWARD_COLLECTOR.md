@@ -103,8 +103,8 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
 - `daily --mode auto`: sweep + per-event until 2 days pass the gate, then sweep mode for good (sticky, stored in
   `collector_settings`; delete that row to go back). Gate: >=90% of per-event events found, >=99% identical
   price_min/max and status.
-- Budget: sweep and feed may use up to 4,750 calls per rolling 24 h (quota 5,000 minus the Price Timeline app's
-  200/day lookup cap and a margin); TM's `Rate-Limit-Available` reserve still stops every client first.
+- Budget: sweep and feed may use up to 4,550 calls per rolling 24 h (quota 5,000 minus twice the Price Timeline
+  app's 200/day lookup cap, which resets at midnight so 400 can fall in one rolling day, and a margin); TM's `Rate-Limit-Available` reserve still stops every client first.
 - `near`: intraday pass over shows dated today..+7 days (~20-30 calls), rows in `near_snapshots` (price, status per pass).
 - Schedule templates: `scripts/launchd/` (daily with `--mode auto`; every 4 h `scripts/intraday.sh` = feed + near). Install:
   `cp scripts/launchd/*.plist ~/Library/LaunchAgents/` then

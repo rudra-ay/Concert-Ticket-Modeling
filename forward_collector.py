@@ -77,9 +77,10 @@ RESERVE_AVAILABLE = 250        # stop if TM's Rate-Limit-Available header drops 
 DEEP_PAGING_CAP = 1000         # TM: size * page < 1000
 DISCOVER_EVERY_DAYS = 7
 SWEEP_DAYS_MAX = 365           # event dates swept: today .. today + 365 days (tours go on sale ~6-12 months out)
-# The sweep may use the quota up to 5,000 minus the Price Timeline app's 200/day lookup cap minus a margin.
-# TM's Rate-Limit-Available reserve (RESERVE_AVAILABLE) still stops every client first if TM disagrees.
-SWEEP_BUDGET = 4750
+# The sweep may use the quota up to 5,000 minus twice the Price Timeline app's 200/day lookup cap (that cap resets
+# at local midnight, so up to 400 app calls can fall in one rolling 24 h) minus a margin. The two counters don't
+# see each other (audit 2026-11-08). TM's Rate-Limit-Available reserve still stops every client first.
+SWEEP_BUDGET = 4550
 SWEEP_SOURCE_URL = f"{API_BASE}/events.json (sweep)"
 # `daily --mode auto` switches to sweep mode for good once GATE_DAYS parallel days each pass these checks.
 GATE_DAYS, GATE_MIN_OVERLAP, GATE_MIN_IDENTICAL = 2, 0.90, 0.99
