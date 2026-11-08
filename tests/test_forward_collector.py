@@ -520,6 +520,22 @@ def test_discover_empty_day(conn, clock):
     assert stats.calls_used == 3 and stats.added_to_watchlist == 0
 
 
+def test_discover_survives_a_network_error_and_retries_that_day_later(conn, clock):
+    """One timeout used to crash discover (runs 48/50). Now: that day is skipped, left unfetched, other days done."""
+    ok = search_responder(per_day=10, today=T0.date())
+    bad_day = (T0.date() + timedelta(days=2)).isoformat()
+
+    def flaky(params):
+        if params["startDateTime"].startswith(bad_day):
+            raise fc.TransportError("read timed out")
+        return ok(params)
+
+    t = FakeTransport(clock, search=flaky)
+    fc.discover(conn, make_client(conn, clock, t), clock, target=5, days_min=1, days_max=3)
+    fetched = {r[0] for r in conn.execute("SELECT slice_key FROM discover_slices")}
+    assert bad_day not in fetched and len(fetched) == 2
+
+
 class AnyEvent(dict):
     def get(self, key, default=None):
         return load("event_with_ranges.json")

@@ -922,7 +922,7 @@ def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, d
         row = conn.execute("SELECT fetched_on FROM discover_slices WHERE slice_key=?", (key,)).fetchone()
         if row and (today - date.fromisoformat(row[0])).days < DISCOVER_EVERY_DAYS:
             continue
-        pages, total = 0, None
+        pages, total, failed = 0, None, False
         page = 0
         while page < max_pages_per_day and (page + 1) * page_size <= DEEP_PAGING_CAP:
             if calls >= max_calls:
@@ -931,7 +931,13 @@ def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, d
                       "startDateTime": f"{key}T00:00:00Z",
                       "endDateTime": f"{(day + timedelta(days=1)).isoformat()}T00:00:00Z",
                       "size": page_size, "page": page, "sort": "id,asc"}
-            resp = client.search_events(params)
+            try:
+                resp = client.search_events(params)
+            except TransportError as exc:  # one timeout used to crash the whole run (runs 48, 50: 2026-11-04/05)
+                calls += 1
+                log.error("discover: network error for day %s page %d: %s (day left for the next run)", key, page, exc)
+                failed = True
+                break
             calls += 1
             if resp.status != 200:
                 log.error("discover: HTTP %d for day %s page %d", resp.status, key, page)
@@ -948,6 +954,9 @@ def fetch_candidates(conn: sqlite3.Connection, client: TMClient, clock: Clock, d
             page += 1
             if not events or page >= int(info.get("totalPages") or 0):
                 break
+        if failed:
+            conn.commit()  # keep candidates from earlier pages; the slice stays unfetched so it is retried
+            continue
         conn.execute("INSERT OR REPLACE INTO discover_slices(slice_key, fetched_on, pages, total_elements) "
                      "VALUES (?,?,?,?)", (key, today.isoformat(), pages, total))
         conn.commit()
