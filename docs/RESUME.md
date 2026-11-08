@@ -7,6 +7,7 @@ Everything in it is approved: L1-L23 and P1-P5 (reviews/approved.json).
 ## App
 The Price Timeline app lives in ~/price-timeline (its PLAN.md has the status). Resale data requests
 (TicketData, Rebrowser) are user actions: ~/price-timeline/docs/DATA_REQUESTS.md.
+Audit 2026-11-08 (~/price-timeline/docs/audit/CONSENSUS.md, audit-maturity.md): 1–14 day forecasts tested now; 30-day pairs from 2026-11-18 (meaningful late Dec), 60-day 2026-12-18 (~Feb 2027), 90-day 2027-01-17 (~Mar 2027); release-to-show needs the daily sweep (user installs scripts/launchd/ plists).
 
 ## Collector (2026-10-26, DECISIONS.md item 6)
 `sweep` (every US music show to +365 days, ~450 calls/day), `feed` (Discovery Feed, 1 call), `near` (final-week
