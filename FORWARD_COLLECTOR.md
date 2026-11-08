@@ -106,9 +106,8 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
 - Budget: sweep and feed may use up to 4,550 calls per rolling 24 h (quota 5,000 minus twice the Price Timeline
   app's 200/day lookup cap, which resets at midnight so 400 can fall in one rolling day, and a margin); TM's `Rate-Limit-Available` reserve still stops every client first.
 - `near`: intraday pass over shows dated today..+7 days (~20-30 calls), rows in `near_snapshots` (price, status per pass).
-- Schedule templates: `scripts/launchd/` (daily with `--mode auto`; every 4 h `scripts/intraday.sh` = feed + near). Install:
-  `cp scripts/launchd/*.plist ~/Library/LaunchAgents/` then
-  `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector; for f in forward-collector feed; do launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.$f.plist; done`
+- Schedule: `scripts/launchd/` (daily with `--mode auto`; every 4 h `scripts/intraday.sh` = feed + near). Install: see
+  "2. Install the schedule".
 
 - 2026-10-26 backfill: manual sweep/feed/near runs that day used ~740 calls of the rolling budget, and the
   per-event pass stopped with 2,405 watchlist events unsnapshotted. `promote_sweep(conn, "2026-10-26")` copied
@@ -119,6 +118,9 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
   PASS, 99.91% identical prices, 100% status. Both gate days pass, but the installed plist runs `daily` without
   `--mode auto`, so nothing switches until the new plists are installed. Install them after the day's pass ends
   (`launchctl bootout` stops a running pass).
+- Update 2026-11-08: the manual 2026-11-07 sweep fails the gate (no per-event pair within 6 h), so after installing,
+  the first 2 auto days run in parallel mode (sweep + per-event, per-event likely budget-stopped and missing far-out
+  shows) before switching to sweep mode.
 
 ## 1. Add the key (user action)
 
@@ -138,18 +140,20 @@ C adds 566 priced events instead of 326. That is where the earlier short-horizon
 
 ## 2. Install the schedule (macOS launchd)
 
-The template is `scripts/com.ticketpriceresearch.forward-collector.plist.template`. It runs `forward_collector.py daily` at 09:15 local time. If the Mac is asleep at that time, launchd runs the job at the next wake. If the Mac is off all day, that day is missed, and the next run carries on normally.
+The plists live in `scripts/launchd/`: `forward-collector` runs `forward_collector.py daily --mode auto` at 09:15 local time, and `feed` runs `scripts/intraday.sh` (feed + near) every 4 h. If the Mac is asleep at run time, launchd runs the job at the next wake. Install them after the day's pass ends (`launchctl bootout` stops a running pass):
 
 ```
 cd /Users/rudraayyagari/Ticket-price-corr-research
 mkdir -p data/forward/logs
-sed "s|__ROOT__|$PWD|g" scripts/com.ticketpriceresearch.forward-collector.plist.template \
-  > ~/Library/LaunchAgents/com.ticketpriceresearch.forward-collector.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.forward-collector.plist
-launchctl kickstart gui/$(id -u)/com.ticketpriceresearch.forward-collector   # optional: run once now
+# if the old plist is installed, unload it first
+launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector 2>/dev/null
+cp scripts/launchd/*.plist ~/Library/LaunchAgents/
+for f in forward-collector feed; do launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticketpriceresearch.$f.plist; done
 ```
 
-To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.forward-collector`, then delete the plist.
+The first 2 `--mode auto` days run sweep and per-event in parallel, and both are partial: the 2026-11-07 manual sweep fails the gate (close=0), so the gate needs 2 fresh passing days before sweep mode sticks.
+
+To uninstall: `launchctl bootout gui/$(id -u)/com.ticketpriceresearch.<forward-collector|feed>`, then delete the plist from `~/Library/LaunchAgents/`.
 
 ### Check that it ran
 
